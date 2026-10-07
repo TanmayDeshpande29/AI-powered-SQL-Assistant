@@ -1,0 +1,49 @@
+[project]
+name = "sqlassist-backend"
+version = "0.1.0"
+description = "AI-powered SQL assistant API: schema-aware RAG + LangGraph agents"
+readme = "../README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Web framework + ASGI server
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    # Settings / validation
+    "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+    # PostgreSQL: async ORM, async driver, migrations
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    # Security
+    "bcrypt>=4.2",
+    "pyjwt>=2.10",
+    # LLM orchestration
+    "langchain-core>=0.3",
+    "langchain-groq>=0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "aiosqlite>=0.20",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]

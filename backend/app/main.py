@@ -1,27 +1,45 @@
+"""Application entrypoint (run from backend/):
+
+    uv run uvicorn app.main:app --reload --reload-include .env
+
+`--reload-include .env` restarts the server when .env changes too; by default only
+*.py files are watched, and settings are read once at startup.
+"""
+
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from app.database.mongodb import user_collection
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes.user_login_route import router as user_login_router
-from app.routes.user_signup_route import router as user_signup_router
-from app.routes.sql_generation_route import router as generate_sql_router
-from app.routes.sql_assistants_route import router as sql_assistants_router
-from app.routes.user_data_route import router as user_data_router
-from app.routes.add_query_data_route import router as add_query_data_router
 
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins = ['http://localhost:5173'],
-    allow_headers = ['*'],
-    allow_methods = ['*'],
-    allow_credentials = True
-)
+from app.api.v1.router import api_router
+from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
+from app.core.logging import configure_logging
+from app.db.session import check_database, engine
 
 
-app.include_router(user_login_router)
-app.include_router(user_signup_router)
-app.include_router(generate_sql_router)
-app.include_router(sql_assistants_router)
-app.include_router(user_data_router)
-app.include_router(add_query_data_router)
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Code before `yield` runs once at startup, code after it once at shutdown.
+    configure_logging()
+    await check_database()  # logs a clear hint if PostgreSQL is unreachable or unmigrated
+    yield
+    await engine.dispose()  # close pooled DB connections cleanly
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    register_exception_handlers(app)
+    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    return app
+
+
+app = create_app()

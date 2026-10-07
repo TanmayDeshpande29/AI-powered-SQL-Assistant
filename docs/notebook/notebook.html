@@ -1,0 +1,2085 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQLAssist Notebook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&family=Patrick+Hand&display=block" rel="stylesheet">
+<link rel="stylesheet" href="notebook.css">
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="sketch.js"></script>
+</head>
+<body>
+
+<!-- ======================================================================
+     HOW TO EXTEND: copy an existing page section, give it data-toc="Title"
+     (data-toc-level="chapter" for chapter openers), add an <svg id="d-...">
+     plus a sketch(...) call, then run: node docs/notebook/build.mjs --check
+     ====================================================================== -->
+
+<!-- ============================ COVER ============================ -->
+<section class="page cover">
+  <div class="cover-title">SQLAssist</div>
+  <div class="cover-sub">an AI engineer's notebook</div>
+  <p class="cover-tag">learning <span class="hl">LLMs · RAG · Agents · Evaluation · MCP</span><br>by building a real SaaS, one phase at a time</p>
+  <figure class="sketch"><svg id="d-cover"></svg></figure>
+  <script>
+  sketch("d-cover", 680, 240, (d) => {
+    const q = d.box(8, 40, 175, 84, "“top 5 customers\nby revenue?”", { shape: "cloud", fill: "gray", size: 18 })
+    const s = d.box(255, 32, 170, 100, "SQLAssist", { fill: "yellow", size: 26, font: "title", weight: 700, sub: "RAG + agents" })
+    const o = d.box(495, 40, 180, 84, "SELECT c.name,\n  SUM(o.total)\nFROM … LIMIT 5", { fill: "green", size: 15, font: "bold" })
+    const db = d.box(285, 168, 110, 64, "your schema", { shape: "db", fill: "blue", size: 16 })
+    d.arrow([190, 82], s.left)
+    d.arrow(s.right, o.left)
+    d.arrow(db.top, s.bottom, { label: "retrieved context", labelOffset: [78, 2], size: 15 })
+    d.check(660, 46)
+  })
+  </script>
+  <div class="cols" style="margin-top:4mm">
+    <div class="sticky">
+      <b>How to read this notebook</b>
+      <ul class="small" style="margin-top:1mm">
+        <li><span class="hl">highlighter</span> = must remember</li>
+        <li><span class="red">red ink</span> = gotcha / common mistake</li>
+        <li><span class="green">green box</span> = pro tip</li>
+        <li><span class="orange">orange card</span> = interview question</li>
+        <li>stamps: <span class="stamp built">BUILT ✓</span> <span class="stamp next">COMING</span></li>
+      </ul>
+    </div>
+    <div class="sticky blue">
+      <b>The deal</b>
+      <p class="small" style="margin-top:1mm">Every phase of the project adds pages here. Concepts first (simple → industry level), then
+      <i>how we actually built it</i> in this codebase. If someone asks you about a term in this
+      notebook, you should be able to draw its diagram from memory.</p>
+    </div>
+  </div>
+  <div class="cover-meta">Volume 1 · Phase 0 edition · October 2026<br>repo: github.com/TanmayDeshpande29/AI-powered-SQL-Assistant</div>
+</section>
+
+<!-- ============================ CONTENTS ============================ -->
+<section class="page">
+  <div class="page-head"><span>contents</span><span>SQLAssist notebook</span></div>
+  <h1 class="chapter">What's inside</h1>
+  <div id="toc"></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 1 ============================ -->
+<section class="page" data-toc="1 · The big picture" data-toc-level="chapter" data-status="overview">
+  <div class="page-head"><span>1 · The big picture</span><span class="stamp built">OVERVIEW</span></div>
+  <h1 class="chapter"><span class="no">1</span>What are we building?</h1>
+  <p><b>The problem.</b> Ask a general-purpose LLM <i>“revenue per customer?”</i> and it happily writes SQL against tables it
+  <span class="hl-p">has never seen</span>: it guesses names like <code>clients.total_revenue</code>. It knows SQL, but not <i>your</i> database.</p>
+  <p><b>Our fix.</b> At question time, <span class="hl">retrieve the relevant part of the user's schema</span> and give it to the model
+  (that's <b>RAG</b>), then let a small <b>team of agents</b> validate, fix, secure and explain the SQL.</p>
+  <figure class="sketch"><svg id="d-problem"></svg></figure>
+  <script>
+  sketch("d-problem", 680, 255, (d) => {
+    d.text(170, 12, "without RAG", { size: 22, color: "red", font: "title", weight: 700 })
+    const q1 = d.box(15, 35, 125, 52, "“revenue per\ncustomer?”", { fill: "gray", size: 15 })
+    const l1 = d.box(190, 72, 110, 50, "LLM", { fill: "purple", size: 20 })
+    const o1 = d.box(150, 152, 180, 72, "SELECT name,\n  total_revenue\nFROM clients", { fill: "pink", size: 14, font: "bold" })
+    d.arrow(q1.right, [190, 88])
+    d.arrow(l1.bottom, [245, 152])
+    d.cross(318, 162)
+    d.text(170, 242, "invented table + column", { size: 16, color: "red" })
+    d.line(345, 8, 345, 250, { dashed: true, color: "gray" })
+    d.text(515, 12, "with RAG (SQLAssist)", { size: 22, color: "green", font: "title", weight: 700 })
+    const q2 = d.box(362, 35, 125, 52, "“revenue per\ncustomer?”", { fill: "gray", size: 15 })
+    const db = d.box(362, 105, 125, 66, "your schema\n(retrieved)", { shape: "db", fill: "blue", size: 14 })
+    const l2 = d.box(548, 72, 110, 50, "LLM", { fill: "purple", size: 20 })
+    const o2 = d.box(495, 152, 180, 72, "SELECT c.name,\n SUM(o.total_amount)\nFROM customers c …", { fill: "green", size: 13.5, font: "bold" })
+    d.arrow(q2.right, [548, 88])
+    d.arrow([487, 140], [548, 102])
+    d.arrow(l2.bottom, [603, 152])
+    d.check(660, 162)
+    d.text(515, 242, "grounded in YOUR tables", { size: 16, color: "green" })
+  })
+  </script>
+  <h2>The 10-phase journey</h2>
+  <figure class="sketch"><svg id="d-phases"></svg></figure>
+  <script>
+  sketch("d-phases", 680, 150, (d) => {
+    const labels = ["Foundation", "LLM\nlayer", "Schema\ningestion", "Embeddings\n+ Qdrant", "Retrieval",
+      "RAG\nevaluation", "Agents\n(LangGraph)", "MCP\nserver", "SaaS &\nscale", "Docker &\ndeploy"]
+    d.line(30, 72, 655, 72, { width: 2 })
+    labels.forEach((label, i) => {
+      const x = 42 + i * 67
+      const fill = i === 0 ? "green" : i === 1 ? "orange" : "white"
+      d.circle(x, 72, 34, { fill, label: String(i), size: 19, font: "title", fillStyle: "solid" })
+      d.text(x, i % 2 === 0 ? 118 : 26, label, { size: 14 })
+    })
+    d.text(42, 145, "✓ done", { size: 15, color: "green" })
+    d.text(109, 145, "next", { size: 15, color: "orange" })
+  })
+  </script>
+  <div class="cols">
+    <div class="tip small">Each phase = a working, tested increment. We never build phase N+1 on a broken phase N.</div>
+    <div class="box small"><b>Stack:</b> React · FastAPI · PostgreSQL · Qdrant · Groq (gpt-oss) · Hugging Face embeddings · LangChain + LangGraph · MCP · Docker</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Target architecture">
+  <div class="page-head"><span>1 · The big picture</span><span class="stamp built">OVERVIEW</span></div>
+  <h2>Target architecture (where we're heading)</h2>
+  <figure class="sketch"><svg id="d-arch"></svg></figure>
+  <script>
+  sketch("d-arch", 680, 560, (d) => {
+    const ui = d.box(170, 8, 340, 52, "Browser · React + Vite SaaS UI", { fill: "green", size: 18 })
+    d.arrow(ui.bottom, [340, 100], { label: "REST + streaming", labelOffset: [70, 0] })
+    d.box(15, 100, 655, 118, null, { dashed: false })
+    d.text(28, 116, "FastAPI (async) · /api/v1", { anchor: "start", size: 17, font: "title", weight: 700 })
+    const ing = d.box(30, 135, 145, 64, "schema ingest API", { dashed: true, fill: "orange", size: 15 })
+    d.box(190, 135, 145, 64, "auth + JWT ✓", { fill: "green", size: 15, sub: "users · tokens" })
+    d.box(350, 135, 145, 64, "SQL + history ✓", { fill: "green", size: 15, sub: "generate · assist" })
+    const qapi = d.box(510, 135, 145, 64, "query API", { dashed: true, fill: "purple", size: 15, sub: "agent runs" })
+    const worker = d.box(15, 262, 190, 84, "ingestion worker", { dashed: true, fill: "orange", size: 16, sub: "parse → chunk → embed" })
+    const team = d.box(222, 262, 235, 84, "LangGraph agent team", { dashed: true, fill: "purple", size: 16, sub: "router · retriever · generator\nvalidator · safety · explainer" })
+    const mcp = d.box(472, 262, 98, 84, "MCP\nserver", { dashed: true, fill: "yellow", size: 16 })
+    const host = d.box(585, 262, 88, 84, "Claude\nDesktop /\nCursor", { dashed: true, size: 14 })
+    d.arrow(ing.bottom, [110, 262])
+    d.arrow(qapi.bottom, [400, 262])
+    d.arrow([457, 304], [472, 304], { both: true })
+    d.arrow([585, 304], [570, 304])
+    const pg = d.box(15, 400, 120, 92, "PostgreSQL ✓", { shape: "db", fill: "green", size: 16, sub: "users · history\nschema metadata" })
+    const hf = d.box(150, 400, 120, 80, "Hugging Face", { shape: "ellipse", dashed: true, fill: "blue", size: 15, sub: "embeddings\nreranker" })
+    const qd = d.box(285, 400, 112, 92, "Qdrant", { shape: "db", dashed: true, fill: "orange", size: 16, sub: "vectors +\nBM25 sparse" })
+    const rd = d.box(412, 400, 105, 92, "Redis", { shape: "db", dashed: true, fill: "pink", size: 16, sub: "queue · cache\nrate limits" })
+    const gq = d.box(532, 400, 140, 84, "Groq LLMs ✓", { shape: "cloud", fill: "purple", size: 16, sub: "gpt-oss-120b/20b" })
+    d.path([[15, 170], [6, 170], [6, 446], [15, 446]], { color: "green" })
+    d.arrow([60, 346], [70, 400])
+    d.arrow([160, 346], [200, 400], { label: "embed", labelOffset: [24, -6], size: 14 })
+    d.arrow([190, 346], [320, 400], { label: "upsert", labelOffset: [30, 4], size: 14 })
+    d.arrow([330, 346], [345, 400], { label: "search", labelOffset: [-2, 0], size: 14 })
+    d.arrow([420, 346], [590, 405], { label: "LLM calls", labelOffset: [10, -10], size: 14 })
+    d.arrow([470, 218], [470, 400], { dashed: true })
+    d.box(20, 515, 30, 22, null, { fill: "green" })
+    d.text(58, 526, "built in phase 0", { anchor: "start", size: 16 })
+    d.box(220, 515, 30, 22, null, { dashed: true })
+    d.text(258, 526, "coming in later phases", { anchor: "start", size: 16 })
+    d.text(470, 526, "(dashed arrow = cache / rate limit)", { anchor: "start", size: 14, color: "gray" })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Part</th><th>Job in SQLAssist</th></tr>
+    <tr><td><b>PostgreSQL</b></td><td>source of truth: users, query history, uploaded schema metadata, eval results</td></tr>
+    <tr><td><b>Qdrant</b></td><td>vector database: embeddings of schema “table cards” for semantic + keyword search</td></tr>
+    <tr><td><b>Groq</b></td><td>runs the LLMs (gpt-oss) very fast on custom LPU chips; free tier with rate limits</td></tr>
+    <tr><td><b>Hugging Face</b></td><td>open embedding + reranker models (run locally in our worker)</td></tr>
+    <tr><td><b>LangGraph</b></td><td>orchestrates the agent team as a state graph (loops, branches, memory, human approval)</td></tr>
+    <tr><td><b>MCP server</b></td><td>exposes our tools so <i>other</i> AI apps (Claude Desktop, Cursor) can use SQLAssist</td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 2 ============================ -->
+<section class="page" data-toc="2 · Web backend foundations" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>2 · Web backend foundations</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h1 class="chapter"><span class="no">2</span>Web backend foundations</h1>
+  <h2>HTTP in one picture</h2>
+  <p>The browser and our API talk in <b>requests</b> and <b>responses</b>. Every request has a <span class="blue">method + path</span>,
+  <span style="color:var(--purple)">headers</span> (metadata) and an optional <span class="green">body</span> (data, here JSON).</p>
+  <figure class="sketch"><svg id="d-http"></svg></figure>
+  <script>
+  sketch("d-http", 680, 215, (d) => {
+    d.box(5, 10, 300, 195, null, { fill: "blue", hachureGap: 7 })
+    d.text(155, 28, "HTTP request", { size: 21, font: "title", weight: 700 })
+    const lines = [
+      ["POST /api/v1/sql/generate", "blue"],
+      ["Authorization: Bearer eyJhbGci…", "purple"],
+      ["Content-Type: application/json", "purple"],
+      ["", "ink"],
+      ['{ "question": "monthly revenue",', "green"],
+      ['  "dialect": "MySQL" }', "green"],
+    ]
+    lines.forEach(([t, c], i) => d.text(18, 58 + i * 24, t, { anchor: "start", size: 15, color: c, font: "bold" }))
+    const srv = d.box(318, 82, 48, 50, "API", { fill: "gray", size: 15 })
+    d.arrow([305, 107], srv.left)
+    d.arrow(srv.right, [380, 107])
+    d.box(380, 10, 295, 195, null, { fill: "green", hachureGap: 7 })
+    d.text(527, 28, "HTTP response", { size: 21, font: "title", weight: 700 })
+    const res = [
+      ["200 OK", "blue"],
+      ["Content-Type: application/json", "purple"],
+      ["", "ink"],
+      ['{ "output": "SELECT …",', "green"],
+      ['  "model": "openai/gpt-oss-120b",', "green"],
+      ['  "latency_ms": 1105 }', "green"],
+    ]
+    res.forEach(([t, c], i) => d.text(393, 58 + i * 24, t, { anchor: "start", size: 15, color: c, font: "bold" }))
+  })
+  </script>
+  <h3>Status codes we actually use</h3>
+  <table class="hand compact">
+    <tr><th>Code</th><th>Meaning</th><th>When SQLAssist returns it</th></tr>
+    <tr><td>200 / 201 / 204</td><td>OK / Created / No Content</td><td>success · signup · delete or password change</td></tr>
+    <tr><td>400</td><td>Bad Request</td><td>wrong <i>current</i> password on change-password</td></tr>
+    <tr><td>401</td><td>Unauthorized = <b>not authenticated</b></td><td>missing / expired / forged token, bad login</td></tr>
+    <tr><td>403</td><td>Forbidden = authenticated but <b>not allowed</b></td><td>(phase 8: workspace roles)</td></tr>
+    <tr><td>404 / 409</td><td>Not Found / Conflict</td><td>row missing <i>or not yours</i> · email already registered</td></tr>
+    <tr><td>422</td><td>Unprocessable Entity</td><td>Pydantic validation failed (field errors listed)</td></tr>
+    <tr><td>500 / 502 / 503</td><td>our bug / upstream failed / not ready</td><td>unhandled error · Groq down · DB down (readiness)</td></tr>
+  </table>
+  <div class="cols">
+    <div class="qa small"><div class="q">401 vs 403?</div><div class="a">401: “I don't know who you are” (authentication failed). 403: “I know who you are, and you may not do this” (authorization failed).</div></div>
+    <div class="warn small">The old API returned <b>200</b> with <code>{"error": …}</code> on failures, so the frontend couldn't use <code>response.ok</code>. Now every error has a real status + one JSON envelope: <code>{"error": {code, message, details}}</code>.</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="FastAPI, ASGI & Pydantic">
+  <div class="page-head"><span>2 · Web backend foundations</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>The server stack</h2>
+  <div class="cols" style="grid-template-columns: 0.8fr 1fr">
+    <figure class="sketch"><svg id="d-stack"></svg></figure>
+    <div>
+      <ul class="arrows">
+        <li><b>Uvicorn</b>: the actual network server. Opens the port, parses raw HTTP bytes.</li>
+        <li><b>ASGI</b> (Asynchronous Server Gateway Interface): the standard “plug shape” between async servers and Python apps. Successor of WSGI (sync).</li>
+        <li><b>FastAPI</b> = <b>Starlette</b> (routing, middleware, requests) + <b>Pydantic</b> (validation) + type hints → automatic OpenAPI docs at <code>/docs</code>.</li>
+        <li><b>Middleware</b> wraps every request (CORS headers, later: request IDs, rate limits).</li>
+        <li><b>Router</b> groups endpoints: we mount everything under <code>/api/v1</code> so v2 can live next to it.</li>
+      </ul>
+      <div class="tip small">Versioned URLs (<code>/api/v1</code>) let you change the API without breaking old clients.</div>
+    </div>
+  </div>
+  <script>
+  sketch("d-stack", 300, 400, (d) => {
+    const rows = [
+      ["Uvicorn", "network server", "gray"],
+      ["ASGI", "server ⇄ app contract", "white"],
+      ["FastAPI app", "routing · validation · DI", "blue"],
+      ["CORSMiddleware", "Access-Control-* headers", "yellow"],
+      ["api_router /api/v1", "auth · users · sql · history", "green"],
+      ["endpoint function", "async def generate(…)", "orange"],
+    ]
+    rows.forEach(([label, sub, fill], i) => d.box(4, 14 + i * 62, 236, 54, label, { fill, size: 19, sub }))
+    d.arrow([258, 16], [258, 380], { color: "blue" })
+    d.text(258, 393, "request", { size: 15, color: "blue" })
+    d.arrow([286, 380], [286, 16], { color: "green" })
+    d.text(286, 5, "response", { size: 15, color: "green" })
+  })
+  </script>
+  <h2>Pydantic: the bouncer at the door</h2>
+  <figure class="sketch"><svg id="d-pydantic"></svg></figure>
+  <script>
+  sketch("d-pydantic", 680, 170, (d) => {
+    const raw = d.box(5, 38, 175, 94, '{"name": "Ada",\n "email": " Ada@X.com",\n "password": "short"}', { fill: "gray", size: 14, font: "bold" })
+    const model = d.box(235, 18, 205, 134, "SignupRequest", { fill: "yellow", size: 19, sub: "name: 1–100 chars\nemail: valid → lowercased\npassword: ≥ 8 chars, ≤ 72 bytes" })
+    const ok = d.box(495, 8, 180, 62, "✓ typed object\n→ your handler", { fill: "green", size: 16 })
+    const bad = d.box(495, 100, 180, 62, "✗ 422 + field errors\n(handler never runs)", { fill: "pink", size: 16 })
+    d.arrow(raw.right, model.left, { label: "JSON", labelOffset: [0, -14], size: 14 })
+    d.arrow([440, 70], [495, 40], { color: "green" })
+    d.arrow([440, 100], [495, 130], { color: "red" })
+  })
+  </script>
+  <div class="cols">
+    <div class="code"><span class="k">class</span> SignupRequest(BaseModel):
+    name: str = Field(min_length=1,
+                      max_length=100)
+    email: NormalizedEmail  <span class="c"># EmailStr + lower()</span>
+    password: Password      <span class="c"># 8+ chars, ≤72 bytes</span></div>
+    <div class="small">
+      <p><b>Why it matters:</b> the handler can <i>trust</i> its inputs. Validation, type conversion and error messages come for free from type hints.</p>
+      <p><b>Response models</b> work the other way round: <code>response_model=UserRead</code> only lets declared fields out, so <code>hashed_password</code> <span class="hl">can never leak</span> in a response.</p>
+    </div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="async / await & the event loop">
+  <div class="page-head"><span>2 · Web backend foundations</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>async / await &amp; the event loop</h2>
+  <div class="sticky green" style="transform:rotate(-0.6deg)"><b>Analogy:</b> one waiter (the event loop thread), many tables (requests).
+  A <i>sync</i> waiter stands at the kitchen until each dish is ready. An <i>async</i> waiter places the order (<code>await</code>),
+  serves other tables, and comes back when the kitchen rings.</div>
+  <figure class="sketch"><svg id="d-loop"></svg></figure>
+  <script>
+  sketch("d-loop", 680, 290, (d) => {
+    const x0 = 90, sec = 190
+    d.text(8, 14, "sync: blocking call inside async def (the old bug)", { anchor: "start", size: 19, color: "red", font: "title", weight: 700 })
+    ;[0, 1, 2].forEach((i) => {
+      d.text(60, 46 + i * 30, "R" + (i + 1), { size: 16 })
+      d.box(x0 + i * sec, 35 + i * 30, sec - 4, 22, "waiting for Groq…", { fill: "pink", size: 13 })
+    })
+    d.text(8, 150, "async: await frees the loop while waiting", { anchor: "start", size: 19, color: "green", font: "title", weight: 700 })
+    ;[0, 1, 2].forEach((i) => {
+      d.text(60, 182 + i * 30, "R" + (i + 1), { size: 16 })
+      d.box(x0 + i * 6, 171 + i * 30, sec - 4, 22, "waiting for Groq…", { fill: "green", size: 13 })
+    })
+    d.line(x0, 268, x0 + 3 * sec, 268, { width: 1.8 })
+    ;[0, 1, 2, 3].forEach((s) => {
+      d.line(x0 + s * sec, 262, x0 + s * sec, 274)
+      d.text(x0 + s * sec, 284, s + " s", { size: 14 })
+    })
+    d.text(650, 81, "≈ 3 s", { size: 18, color: "red" })
+    d.text(400, 218, "≈ 1 s for all three", { size: 18, color: "green", anchor: "start" })
+  })
+  </script>
+  <ul class="arrows">
+    <li><code>async def</code> + <code>await</code> means “I'm waiting on I/O (network, disk, DB): run something else meanwhile”.</li>
+    <li>It only helps <span class="hl">I/O-bound</span> work. CPU-heavy work (embedding 10k chunks) still blocks → run it in a worker / process pool.</li>
+    <li>Inside <code>async def</code>, use async libraries only: <code>asyncpg</code>, <code>httpx</code>, LangChain's <code>ainvoke</code>.</li>
+  </ul>
+  <div class="cols">
+    <div class="warn small">Old code called the <b>sync</b> Groq client inside <code>async def</code>. One slow LLM call froze the <i>whole server</i> for every user.</div>
+    <div class="code">result = <span class="k">await</span> chain.ainvoke(inputs)
+<span class="c"># need a blocking lib? offload it:</span>
+data = <span class="k">await</span> asyncio.to_thread(fn)</div>
+  </div>
+  <div class="qa small"><div class="q">Is async the same as multithreading?</div><div class="a">No. Async is <b>one thread</b> switching between tasks at <code>await</code> points (cooperative). Threads are scheduled by the OS (preemptive). Async scales to thousands of waiting connections cheaply; it doesn't make CPU work faster.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Layered architecture & dependency injection">
+  <div class="page-head"><span>2 · Web backend foundations</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Layered architecture</h2>
+  <figure class="sketch"><svg id="d-layers"></svg></figure>
+  <script>
+  sketch("d-layers", 680, 300, (d) => {
+    d.text(185, 10, "HTTP request", { size: 15, color: "gray" })
+    const r = d.box(20, 30, 330, 58, "api/v1/routes/", { fill: "blue", size: 18, sub: "parse request · choose status code" })
+    const s = d.box(20, 120, 330, 58, "services/", { fill: "green", size: 18, sub: "authenticate · generate_sql · history" })
+    const m = d.box(20, 210, 330, 58, "models/  +  db/", { fill: "orange", size: 18, sub: "User · QueryHistory · sessions" })
+    const l = d.box(385, 120, 140, 58, "llm/", { fill: "yellow", size: 18, sub: "prompts · client" })
+    const c = d.box(555, 30, 118, 238, "core/", { fill: "purple", size: 18, sub: "config\nsecurity\nexceptions\nlogging\n\nused by\nevery layer" })
+    d.arrow([185, 18], r.top)
+    d.arrow(r.bottom, s.top)
+    d.arrow(s.bottom, m.top)
+    d.arrow(s.right, l.left)
+    d.arrow([350, 50], [555, 50], { dashed: true, color: "gray" })
+    d.arrow([525, 150], [555, 150], { dashed: true, color: "gray" })
+    d.arrow([350, 240], [555, 240], { dashed: true, color: "gray" })
+    d.text(340, 290, "dependency rule: arrows point down / sideways — lower layers never import upper ones", { size: 15, color: "red" })
+  })
+  </script>
+  <p><b>Why bother?</b> Services don't know about HTTP, so the <span class="hl">same function</span> can be called by a route today,
+  by a LangGraph agent in phase 6 and by an MCP tool in phase 7. Tests call services directly too.</p>
+  <h2>Dependency injection with Depends()</h2>
+  <figure class="sketch"><svg id="d-di"></svg></figure>
+  <script>
+  sketch("d-di", 680, 215, (d) => {
+    const u = d.box(8, 10, 205, 54, "get_current_user()", { fill: "blue", size: 16, sub: "token → User (uses get_db)" })
+    const g = d.box(240, 10, 200, 54, "get_db()", { fill: "green", size: 16, sub: "yield AsyncSession" })
+    const p = d.box(467, 10, 205, 54, "get_primary_llm()", { fill: "purple", size: 16, sub: "ChatGroq (cached)" })
+    const e = d.box(150, 128, 300, 64, "generate(data, user, db, llm)", { fill: "yellow", size: 16, font: "bold" })
+    d.arrow(u.bottom, [230, 128])
+    d.arrow(g.bottom, [300, 128])
+    d.arrow(p.bottom, [400, 128])
+    d.box(478, 128, 195, 70, "tests swap:\nget_db → SQLite\nllm → FakeListChatModel", { dashed: true, fill: "gray", size: 14 })
+  })
+  </script>
+  <div class="cols">
+    <div class="code"><span class="c"># api/deps.py: declare once, reuse everywhere</span>
+DbSession  = Annotated[AsyncSession, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
+PrimaryLLM = Annotated[BaseChatModel,
+                       Depends(get_primary_llm)]</div>
+    <div class="qa small"><div class="q">Why dependency injection?</div><div class="a">The function declares <i>what</i> it needs, the framework decides <i>how</i> to build it. You get swappable implementations (tests, configs), one place for cross-cutting rules (auth), and managed lifecycles (session closed after each request).</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 3 ============================ -->
+<section class="page" data-toc="3 · The data layer" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>3 · The data layer</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h1 class="chapter"><span class="no">3</span>The data layer</h1>
+  <div class="cols wide-left">
+    <div>
+      <h3>Why PostgreSQL (and not Mongo) for us</h3>
+      <ul class="arrows small">
+        <li>Our data is <b>relational</b>: users → history; soon workspaces → schemas → tables → columns → foreign keys.</li>
+        <li><b>Constraints in the DB</b> (UNIQUE email, FOREIGN KEY, NOT NULL) hold even when app code has a bug.</li>
+        <li><b>ACID transactions</b>: all-or-nothing writes.</li>
+        <li>Still flexible: <code>JSONB</code> columns, full-text search, extensions.</li>
+      </ul>
+    </div>
+    <div class="box small"><b>UUID primary keys</b> instead of 1, 2, 3…
+      <ul class="tiny" style="margin-top:1mm">
+        <li>not guessable (<code>/history/5</code> → “let me try 6”)</li>
+        <li>can be generated anywhere (workers) before insert</li>
+        <li>cost: 16 bytes, random B-tree inserts (UUIDv7 fixes ordering)</li>
+      </ul>
+    </div>
+  </div>
+  <h2>Our schema today (ER diagram)</h2>
+  <figure class="sketch"><svg id="d-er"></svg></figure>
+  <script>
+  sketch("d-er", 680, 345, (d) => {
+    function table(x, y, w, title, rows, fill) {
+      const h = 46 + rows.length * 25
+      d.box(x, y, w, h, null, { fill, hachureGap: 8 })
+      d.line(x, y + 38, x + w, y + 38, { width: 1.6 })
+      d.text(x + w / 2, y + 20, title, { size: 24, font: "title", weight: 700 })
+      rows.forEach(([name, type, tag], i) => {
+        const ry = y + 55 + i * 25
+        d.text(x + 12, ry, name, { anchor: "start", size: 15, font: "bold" })
+        d.text(x + w - 12, ry, type, { anchor: "end", size: 14, color: tag === "PK" ? "orange" : tag === "FK" ? "purple" : "gray" })
+      })
+      return { x, y, w, h }
+    }
+    table(10, 10, 280, "users", [
+      ["id", "UUID · PK", "PK"], ["email", "VARCHAR(320) · UNIQUE"], ["name", "VARCHAR(100)"],
+      ["hashed_password", "VARCHAR(128)"], ["is_active", "BOOLEAN"], ["created_at / updated_at", "TIMESTAMPTZ"],
+    ], "blue")
+    table(385, 10, 290, "query_history", [
+      ["id", "UUID · PK", "PK"], ["user_id", "UUID · FK → users.id", "FK"], ["tool", "VARCHAR(32)"],
+      ["dialect", "VARCHAR(40)"], ["input_text / output_text", "TEXT"], ["model", "VARCHAR(100)"],
+      ["latency_ms", "INTEGER"], ["created_at", "TIMESTAMPTZ"],
+    ], "green")
+    d.line(290, 65, 385, 90, { width: 1.8 })
+    d.text(300, 52, "1", { size: 20, font: "title", weight: 700 })
+    d.line(370, 90, 385, 80, { width: 1.6 })
+    d.line(370, 90, 385, 100, { width: 1.6 })
+    d.text(368, 108, "N", { size: 20, font: "title", weight: 700 })
+    d.text(338, 135, "ON DELETE\nCASCADE", { size: 13.5, color: "red" })
+    d.text(530, 268, "index (user_id, created_at) for “my history, newest first”", { size: 14, color: "orange" })
+    d.box(10, 228, 280, 108, null, { dashed: true })
+    d.text(150, 248, "coming in phases 2–5", { size: 19, font: "title", weight: 700, color: "gray" })
+    d.text(150, 294, "workspaces · schema_sources\nschema_tables · schema_columns\nfk_edges · eval_runs", { size: 15, color: "gray" })
+  })
+  </script>
+  <div class="cols">
+    <div class="small"><b>Read the crow's foot:</b> one user (<b>1</b>) has many history rows (<b>N</b>). Deleting a user deletes their history automatically (<code>ON DELETE CASCADE</code>), done <i>by Postgres</i>, not by our code.</div>
+    <div class="warn small">MongoDB was removed entirely. Its old history route never awaited the async driver, so <b>nothing was ever saved</b>.</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Connecting to PostgreSQL">
+  <div class="page-head"><span>3 · The data layer</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Connecting to PostgreSQL</h2>
+  <p><span class="hl">pgAdmin and our API are both just <i>clients</i> of the same PostgreSQL server.</span> They log in
+  with the same kind of credentials; ours live in <code>backend/.env</code>, and every part of the backend reads them from one place.</p>
+  <figure class="sketch"><svg id="d-connect"></svg></figure>
+  <script>
+  sketch("d-connect", 680, 256, (d) => {
+    const env = d.box(4, 14, 196, 150, null, { shape: "note", fill: "yellow" })
+    d.text(102, 30, "backend/.env", { size: 17, font: "bold" })
+    ;["POSTGRES_HOST=localhost", "POSTGRES_PORT=5432", "POSTGRES_USER=sqlassist", "POSTGRES_PASSWORD=••••••", "POSTGRES_DB=sql_assistant"]
+      .forEach((t, i) => d.text(14, 58 + i * 22, t, { anchor: "start", size: 13.5, font: "bold" }))
+    const st = d.box(236, 14, 150, 56, "Settings", { fill: "purple", size: 17, sub: "core/config.py" })
+    const url = d.box(236, 108, 150, 56, "URL.create(…)", { fill: "blue", size: 16, sub: "settings.sqlalchemy_url" })
+    d.arrow([200, 42], st.left)
+    d.arrow(st.bottom, url.top)
+    const eng = d.box(424, 30, 138, 56, "engine + pool", { fill: "green", size: 16, sub: "db/session.py" })
+    const ale = d.box(424, 110, 138, 56, "migrations", { fill: "orange", size: 16, sub: "alembic/env.py" })
+    d.arrow([386, 128], [424, 62])
+    d.arrow([386, 140], [424, 138])
+    const pg = d.box(592, 40, 86, 140, "Postgres\nserver", { shape: "db", fill: "blue", size: 15, sub: ":5432" })
+    d.arrow(eng.right, [592, 70])
+    d.arrow(ale.right, [592, 138])
+    const gui = d.box(424, 206, 138, 46, "pgAdmin (GUI)", { fill: "gray", size: 16 })
+    d.arrow(gui.right, [600, 182], { label: "same kind of login", labelOffset: [52, 14], size: 13 })
+    d.text(120, 205, "read once at startup:\napp + migrations share\none source of truth", { size: 14, color: "green" })
+  })
+  </script>
+  <h3>Anatomy of a connection URL</h3>
+  <figure class="sketch"><svg id="d-url"></svg></figure>
+  <script>
+  sketch("d-url", 680, 100, (d) => {
+    const parts = [["postgresql+asyncpg://", 2, 180, "pink", "dialect + driver"], ["sqlassist", 186, 92, "blue", "user (role)"],
+      [":••••••", 282, 84, "yellow", "password"], ["@localhost", 370, 106, "green", "host"],
+      [":5432", 480, 64, "orange", "port"], ["/sql_assistant", 548, 130, "purple", "database"]]
+    parts.forEach(([t, x, w, fill, label]) => {
+      d.box(x, 8, w, 40, t, { fill, size: 14.5, font: "bold" })
+      d.text(x + w / 2, 72, label, { size: 14, color: "gray" })
+    })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Thing</th><th>What it is</th></tr>
+    <tr><td><b>PostgreSQL server</b></td><td>the program listening on port 5432 (a Windows service); it holds many databases</td></tr>
+    <tr><td><b>pgAdmin</b></td><td>a GUI <i>client</i>; it logs into the server exactly like our API does</td></tr>
+    <tr><td><b>role (user)</b></td><td>a login on the server; <code>postgres</code> is the superuser created at install</td></tr>
+    <tr><td><b>database · schema</b></td><td><code>sql_assistant</code> holds schemas; our tables live in the <code>public</code> schema</td></tr>
+  </table>
+  <div class="cols">
+    <div>
+      <div class="code"><span class="c">-- pgAdmin → Query Tool, ONE statement at a time</span>
+<span class="k">CREATE ROLE</span> sqlassist <span class="k">WITH LOGIN PASSWORD</span> <span class="s">'…'</span>;
+<span class="k">CREATE DATABASE</span> sql_assistant <span class="k">OWNER</span> sqlassist;</div>
+      <p class="small">Run them one by one (<code>CREATE DATABASE</code> can't run inside a transaction block), then <code>alembic upgrade head</code>. <span class="red">Edited <code>.env</code>? A running server keeps the old values until it restarts</span>: our dev command restarts on <code>.env</code> changes.</p>
+    </div>
+    <div class="warn small"><b>Two passwords, don't mix them up.</b> pgAdmin's <i>master password</i> only encrypts the logins pgAdmin saves; it never goes in <code>.env</code>. And a password like <code>p@ss#1</code> breaks a hand-written URL (the <code>@</code> looks like the host separator), which is why we build it with <code>URL.create()</code>.</div>
+  </div>
+  <div class="qa small"><div class="q">Why not let the app log in as <code>postgres</code>?</div><div class="a"><b>Least privilege:</b> if the app is compromised (SQL injection, leaked .env), a superuser could drop every database or even run OS commands (<code>COPY … PROGRAM</code>). A role that only owns <code>sql_assistant</code> limits the damage to that database.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="ORM, sessions & connection pools">
+  <div class="page-head"><span>3 · The data layer</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>ORM: objects ⇄ rows</h2>
+  <figure class="sketch"><svg id="d-orm"></svg></figure>
+  <script>
+  sketch("d-orm", 680, 170, (d) => {
+    d.text(130, 10, "Python world", { size: 19, font: "title", weight: 700, color: "blue" })
+    d.text(555, 10, "Database world", { size: 19, font: "title", weight: 700, color: "green" })
+    d.text(342, 10, "SQLAlchemy maps", { size: 16, color: "gray" })
+    const rows = [["class User", "TABLE users"], ["attribute  user.email", "column  email"], ["object  User(name=“Ada”)", "row  (uuid, 'ada@…', …)"]]
+    rows.forEach(([l, r], i) => {
+      const y = 30 + i * 46
+      const a = d.box(15, y, 235, 38, l, { fill: "blue", size: 16 })
+      const b = d.box(435, y, 240, 38, r, { fill: "green", size: 16 })
+      d.arrow(a.right, b.left, { both: true })
+    })
+  })
+  </script>
+  <div class="cols">
+    <div class="code"><span class="k">class</span> User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = <span class="s">"users"</span>
+    email: Mapped[str] = mapped_column(
+        String(320), unique=True, index=True)
+    queries: Mapped[list[<span class="s">"QueryHistory"</span>]] = relationship(
+        back_populates=<span class="s">"user"</span>, passive_deletes=True)</div>
+    <div class="small">
+      <p><b>Session = unit of work.</b> <code>db.add(user)</code> stages it, <code>await db.commit()</code> sends the INSERT and commits the transaction. On error: <code>rollback()</code>, nothing half-written.</p>
+      <p><b>Mixins</b> share columns (<code>id</code>, <code>created_at</code>) across models without copy-paste.</p>
+    </div>
+  </div>
+  <h2>Connection pool</h2>
+  <figure class="sketch"><svg id="d-pool"></svg></figure>
+  <script>
+  sketch("d-pool", 680, 190, (d) => {
+    ;["R1", "R2", "R3", "R4"].forEach((r, i) => d.circle(35, 25 + i * 45, 34, { label: r, fill: i === 3 ? "pink" : "blue", size: 15 }))
+    d.box(150, 8, 270, 175, null, { fill: "gray", hachureGap: 8 })
+    d.text(285, 24, "engine · connection pool", { size: 17, font: "title", weight: 700 })
+    ;[0, 1, 2].forEach((i) => {
+      d.box(175, 42 + i * 44, 110, 32, "conn " + (i + 1), { fill: "green", size: 15 })
+      d.arrow([52, 25 + i * 45], [175, 58 + i * 44], { size: 13 })
+    })
+    d.arrow([52, 160], [140, 160], { dashed: true, color: "red" })
+    d.text(60, 180, "waits for a free conn", { size: 13, color: "red", anchor: "start" })
+    const pg = d.box(520, 50, 150, 96, "PostgreSQL", { shape: "db", fill: "blue", size: 17 })
+    d.arrow([285, 100], pg.left, { label: "kept open, reused", size: 14 })
+  })
+  </script>
+  <p class="small">Opening a Postgres connection costs a TCP + auth handshake. The <b>engine</b> keeps a pool of open connections; each request <i>borrows</i> one and returns it. <code>pool_pre_ping=True</code> tests a connection before use (the server may have dropped it).</p>
+  <div class="cols">
+    <div class="warn small"><b>expire_on_commit.</b> After commit, SQLAlchemy normally “forgets” loaded values and reloads them lazily. In async code a lazy load can't happen implicitly → <code>MissingGreenlet</code> error. We set <code>expire_on_commit=False</code>.</div>
+    <div class="qa small"><div class="q">What is the N+1 query problem?</div><div class="a">Loading 1 list query, then 1 extra query <i>per row</i> for a relationship (N rows → N+1 queries). Fix with eager loading (<code>selectinload</code>) or a JOIN.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Migrations & indexes">
+  <div class="page-head"><span>3 · The data layer</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Migrations: git for your schema</h2>
+  <figure class="sketch"><svg id="d-mig"></svg></figure>
+  <script>
+  sketch("d-mig", 680, 160, (d) => {
+    const a = d.box(2, 45, 92, 56, "empty DB", { fill: "gray", size: 16 })
+    const b = d.box(178, 30, 178, 86, "3aea2b6b21c0", { fill: "green", size: 17, font: "bold", sub: "create users +\nquery_history" })
+    const c = d.box(400, 38, 140, 70, "next revision", { dashed: true, size: 16, sub: "add workspaces" })
+    const e = d.box(590, 45, 85, 56, "…", { dashed: true, size: 20 })
+    d.arrow([94, 62], [178, 62], { label: "upgrade", size: 14, color: "green" })
+    d.arrow([178, 92], [94, 92], { label: "downgrade", labelOffset: [0, 13], size: 14, color: "red", dashed: true })
+    d.arrow([356, 62], [400, 62], { color: "green" })
+    d.arrow([540, 72], [590, 72], { color: "green" })
+    d.check(344, 38)
+    d.text(340, 148, "the alembic_version table stores which revision the database is at", { size: 15, color: "gray" })
+  })
+  </script>
+  <div class="cols">
+    <div class="code">uv run alembic revision --autogenerate -m <span class="s">"msg"</span>
+uv run alembic upgrade head    <span class="c"># apply all</span>
+uv run alembic downgrade -1    <span class="c"># undo last</span>
+uv run alembic check           <span class="c"># drift?</span></div>
+    <div class="warn small"><b>Autogenerate is a draft.</b> Ours was generated against SQLite, so it wrote <code>(CURRENT_TIMESTAMP)</code> + SQLite batch ops. We rewrote it by hand to portable SQL. <span class="hl">Always read a migration before running it.</span></div>
+  </div>
+  <h2>Indexes: the phone book trick</h2>
+  <figure class="sketch"><svg id="d-btree"></svg></figure>
+  <script>
+  sketch("d-btree", 680, 200, (d) => {
+    const root = d.box(300, 8, 80, 36, "M", { fill: "yellow", size: 18 })
+    const l = d.box(130, 76, 110, 36, "D · H", { fill: "blue", size: 17 })
+    const r = d.box(440, 76, 110, 36, "R · W", { fill: "blue", size: 17 })
+    d.arrow([320, 44], l.top)
+    d.arrow([360, 44], r.top, { color: "red", width: 2.2 })
+    const leaves = [["A B C", 10], ["E F G", 120], ["I J K L", 230], ["N O P Q", 352], ["S T U V", 466], ["X Y Z", 580]]
+    leaves.forEach(([t, x], i) => {
+      const hit = i === 4
+      d.box(x, 150, 95, 34, t, { fill: hit ? "green" : "white", size: 15, fillStyle: hit ? "hachure" : "solid" })
+      d.arrow(i < 3 ? [185, 112] : [495, 112], [x + 47, 150], { color: hit ? "red" : "ink", width: hit ? 2.2 : 1.3 })
+    })
+    d.text(610, 30, "find “T”:\n3 hops, not\n26 rows", { size: 16, color: "red" })
+  })
+  </script>
+  <ul class="arrows small">
+    <li>A <b>B-tree index</b> keeps keys sorted in a shallow tree → lookups in <i>O(log n)</i> instead of scanning every row.</li>
+    <li><b>Composite index</b> <code>(user_id, created_at)</code> answers <code>WHERE user_id = ? ORDER BY created_at DESC</code> in one walk. <span class="hl">Leftmost-prefix rule:</span> it helps queries on <code>user_id</code> alone, but not on <code>created_at</code> alone.</li>
+    <li><b>Unique index</b> on email: the DB rejects duplicates even if two signups race; we catch <code>IntegrityError</code> → 409.</li>
+    <li>Cost: faster reads, slower writes + disk. Index what you <b>filter, join and sort</b> on.</li>
+  </ul>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 4 ============================ -->
+<section class="page" data-toc="4 · Security basics" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>4 · Security basics</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h1 class="chapter"><span class="no">4</span>Security basics</h1>
+  <h2>Hashing ≠ encryption</h2>
+  <figure class="sketch"><svg id="d-hash"></svg></figure>
+  <script>
+  sketch("d-hash", 680, 225, (d) => {
+    d.text(8, 12, "encryption (two-way)", { anchor: "start", size: 19, font: "title", weight: 700, color: "blue" })
+    const p1 = d.box(8, 30, 135, 46, "hello123", { fill: "gray", size: 17, font: "bold" })
+    const c1 = d.box(290, 30, 135, 46, "x9#Lq…", { fill: "blue", size: 17, font: "bold" })
+    d.arrow([143, 46], [290, 46], { label: "encrypt (key)", size: 14 })
+    d.arrow([290, 66], [143, 66], { label: "decrypt (key)", labelOffset: [0, 13], size: 14, dashed: true })
+    d.text(445, 53, "whoever holds the key\ncan get the password back", { anchor: "start", size: 15, color: "red" })
+    d.text(8, 112, "hashing (one-way)", { anchor: "start", size: 19, font: "title", weight: 700, color: "green" })
+    const p2 = d.box(8, 135, 135, 46, "hello123", { fill: "gray", size: 17, font: "bold" })
+    const h = d.box(195, 125, 110, 66, "bcrypt", { fill: "yellow", size: 18, sub: "+ random salt" })
+    const out = d.box(355, 135, 200, 46, "$2b$12$Q3k9mN1v…", { fill: "green", size: 16, font: "bold" })
+    d.arrow([143, 158], h.left)
+    d.arrow(h.right, out.left)
+    d.arrow([455, 181], [75, 181], { bend: -30, dashed: true, color: "red" })
+    d.cross(265, 214)
+    d.text(320, 214, "no way back", { size: 15, color: "red", anchor: "start" })
+    d.text(570, 158, "login = hash\nagain & compare", { anchor: "start", size: 15, color: "green" })
+  })
+  </script>
+  <ul class="arrows">
+    <li>We never need the original password, only to <i>check</i> it → store a <b>hash</b>. A leaked DB ≠ leaked passwords. (The old code stored <span class="red">plain text</span>.)</li>
+    <li><b>Salt</b>: random bytes mixed in per password. Same password → different hashes → precomputed “rainbow tables” are useless. Our test asserts <code>hash("x") != hash("x")</code>.</li>
+    <li><b>bcrypt is slow on purpose</b>: cost 12 = 2<sup>12</sup> rounds (~0.25 s). Fine for one login, brutal for billions of guesses. Fast hashes like SHA-256 are <span class="red">wrong</span> for passwords.</li>
+  </ul>
+  <figure class="sketch"><svg id="d-bcrypt"></svg></figure>
+  <script>
+  sketch("d-bcrypt", 680, 112, (d) => {
+    const parts = [["$2b$", 8, 62, "pink", "algorithm\nversion"], ["12$", 75, 52, "orange", "cost =\n2¹² rounds"],
+      ["Q3k9mN1vXz8pL2tR7cYw0e", 132, 250, "yellow", "salt (22 chars)\nrandom per password"],
+      ["J5hG8sD2fK1lA9qW3eR6tY0uI4oP7aZ", 387, 288, "green", "the hash (31 chars)"]]
+    parts.forEach(([t, x, w, fill, label]) => {
+      d.box(x, 8, w, 40, t, { fill, size: 15, font: "bold" })
+      d.text(x + w / 2, 80, label, { size: 14, color: "gray" })
+    })
+  })
+  </script>
+  <div class="cols">
+    <div class="warn small"><b>72-byte limit.</b> bcrypt ignores bytes after 72 (and bcrypt 5 raises an error). We reject longer passwords, counting <i>bytes</i>, not characters: one emoji = 4 bytes.</div>
+    <div class="warn small"><b>User enumeration.</b> If “unknown email” answers faster than “wrong password”, attackers learn who has an account. We return the same message and still run bcrypt against a dummy hash.</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="JSON Web Tokens (JWT)">
+  <div class="page-head"><span>4 · Security basics</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Anatomy of a JWT</h2>
+  <figure class="sketch"><svg id="d-jwt"></svg></figure>
+  <script>
+  sketch("d-jwt", 680, 280, (d) => {
+    d.box(8, 8, 200, 44, "eyJhbGciOiJIUzI1…", { fill: "pink", size: 15, font: "bold" })
+    d.text(216, 30, ".", { size: 30, font: "title", weight: 700 })
+    d.box(224, 8, 250, 44, "eyJzdWIiOiI5YjEz…", { fill: "purple", size: 15, font: "bold" })
+    d.text(482, 30, ".", { size: 30, font: "title", weight: 700 })
+    d.box(490, 8, 182, 44, "SflKxwRJSMeKKF2Q…", { fill: "blue", size: 15, font: "bold" })
+    d.arrow([108, 52], [108, 88])
+    d.arrow([349, 52], [349, 88])
+    d.arrow([581, 52], [581, 88])
+    d.box(8, 88, 200, 92, "HEADER", { size: 17, weight: 700, sub: '{"alg": "HS256",\n "typ": "JWT"}', subColor: "ink" })
+    d.box(224, 88, 250, 160, "PAYLOAD (claims)", { size: 17, weight: 700, sub: '{"sub": "<user uuid>",\n "type": "access",\n "iat": 1791350000,\n "exp": 1791350900,\n "jti": "4f1c…"}', subColor: "ink" })
+    d.box(490, 88, 182, 120, "SIGNATURE", { size: 17, weight: 700, sub: "HMAC-SHA256(\n  header.payload,\n  SECRET)", subColor: "ink" })
+    d.text(349, 268, "base64url-encoded — NOT encrypted!", { size: 17, color: "red" })
+    d.text(581, 232, "tamper → mismatch", { size: 15, color: "green" })
+  })
+  </script>
+  <ul class="arrows">
+    <li><b>Signed, not secret:</b> anyone can decode the payload (try jwt.io). <span class="hl">Never put secrets in it.</span></li>
+    <li>The server recomputes the signature with its <b>SECRET</b>. Change one character of the payload → signature mismatch → rejected.</li>
+    <li><b>Stateless:</b> verifying needs no DB lookup (we still load the user to check <code>is_active</code>).</li>
+    <li><b>Claims:</b> <code>sub</code> who · <code>exp</code> expiry · <code>iat</code> issued-at · <code>jti</code> unique id (enables revocation lists) · <code>type</code> our own: <i>access</i> or <i>refresh</i>.</li>
+  </ul>
+  <div class="cols">
+    <div class="warn small"><b>Weak secret.</b> HS256 needs ≥ 256 bits of randomness. Ours was 13 characters → rotated to <code>secrets.token_urlsafe(48)</code>, and config now refuses &lt; 32 chars at startup.</div>
+    <div class="warn small"><b>Pin the algorithm.</b> <code>jwt.decode(…, algorithms=["HS256"])</code> blocks the classic <code>"alg": "none"</code> and algorithm-confusion attacks.</div>
+  </div>
+  <div class="cols">
+    <div class="code"><span class="c"># core/security.py (PyJWT)</span>
+payload = jwt.decode(token, SECRET,
+    algorithms=[<span class="s">"HS256"</span>],
+    options={<span class="s">"require"</span>: [<span class="s">"exp"</span>, <span class="s">"sub"</span>, <span class="s">"type"</span>]})
+<span class="k">if</span> payload[<span class="s">"type"</span>] != expected_type:
+    <span class="k">raise</span> jwt.InvalidTokenError()</div>
+    <div class="qa small"><div class="q">Why did we add a “type” claim?</div><div class="a">Without it, a long-lived <b>refresh</b> token would also work as an <b>access</b> token on every endpoint, defeating short expiry. A test checks this can't happen.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Access + refresh token flow">
+  <div class="page-head"><span>4 · Security basics</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Access + refresh tokens, step by step</h2>
+  <figure class="sketch"><svg id="d-authseq"></svg></figure>
+  <script>
+  sketch("d-authseq", 680, 425, (d) => {
+    d.sequence({
+      gap: 28,
+      actors: [{ id: "b", label: "Browser", fill: "blue" }, { id: "a", label: "FastAPI", fill: "green" }, { id: "p", label: "PostgreSQL", fill: "orange" }],
+      steps: [
+        { from: "b", to: "a", label: "POST /auth/login {email, password}" },
+        { from: "a", to: "p", label: "SELECT user WHERE email = …" },
+        { from: "p", to: "a", label: "row incl. hashed_password", reply: true },
+        { self: "a", label: "bcrypt.checkpw ✓" },
+        { from: "a", to: "b", label: "{access: 15 min, refresh: 7 days}", reply: true },
+        { from: "b", to: "a", label: "GET /history  Bearer <access>" },
+        { from: "a", to: "b", label: "200 [rows]", reply: true },
+        { note: "… 15 minutes later …" },
+        { from: "b", to: "a", label: "GET /history  Bearer <expired>" },
+        { from: "a", to: "b", label: "401 not_authenticated", reply: true, color: "red" },
+        { from: "b", to: "a", label: "POST /auth/refresh {refresh}" },
+        { from: "a", to: "b", label: "200 new {access, refresh}", reply: true, color: "green" },
+        { from: "b", to: "a", label: "retry GET /history → 200 ✓" },
+      ],
+    })
+  })
+  </script>
+  <div class="cols">
+    <div class="small">
+      <p><b>Why two tokens?</b> The access token travels on <i>every</i> request, so it's short-lived: if stolen, damage lasts minutes. The refresh token is sent to <i>one</i> endpoint only, rarely.</p>
+      <p><b>Single-flight refresh</b> (<code>frontend/src/lib/api.js</code>): when 4 requests hit 401 at once, they all await <span class="hl">one</span> shared refresh call. We saw exactly this in the browser network log during testing.</p>
+    </div>
+    <div class="code"><span class="c">// api.js: share one refresh between callers</span>
+<span class="k">let</span> refreshInFlight = <span class="k">null</span>
+<span class="k">function</span> refreshTokens() {
+  refreshInFlight ??= fetch(<span class="s">"/auth/refresh"</span>, …)
+    .then(saveTokens)
+    .finally(() =&gt; (refreshInFlight = <span class="k">null</span>))
+  <span class="k">return</span> refreshInFlight
+}</div>
+  </div>
+  <div class="qa"><div class="q">JWTs are stateless. How do you log someone out <i>before</i> the token expires?</div><div class="a">
+    You can't “un-sign” a token, so you add a little state back:
+    <ul class="small" style="margin:1mm 0 0">
+      <li><b>short access tokens</b> (ours: 15 min) bound the damage window;</li>
+      <li><b>denylist</b> the token's <code>jti</code> in Redis until its <code>exp</code>, checked in <code>get_current_user</code>;</li>
+      <li><b>refresh-token rotation</b>: each refresh issues a new refresh token and invalidates the old one; if an old one is ever reused, it was stolen, so revoke the whole family;</li>
+      <li><b>token version</b> on the user row: bump it on password change → every older token fails.</li>
+    </ul></div></div>
+  <div class="tip small">This is exactly why our tokens already carry a <code>jti</code> (unique id): revocation can be added in phase 8 without changing the token format.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="IDOR, CORS & token storage">
+  <div class="page-head"><span>4 · Security basics</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>IDOR: the bug we had</h2>
+  <p><b>Insecure Direct Object Reference</b>: the API trusts an id from the URL without checking ownership.
+  The old <code>GET /user-data/{user_id}</code> returned <i>any</i> user's data to <i>anyone</i>, no token needed.</p>
+  <figure class="sketch"><svg id="d-idor"></svg></figure>
+  <script>
+  sketch("d-idor", 680, 175, (d) => {
+    d.text(160, 10, "before", { size: 21, font: "title", weight: 700, color: "red" })
+    const m = d.box(4, 30, 96, 50, "Mallory", { fill: "pink", size: 17 })
+    const a = d.box(190, 30, 150, 50, "/user-data/{id}", { fill: "gray", size: 15, font: "bold" })
+    d.arrow(m.right, a.left, { label: "id of Ada", size: 13.5 })
+    d.arrow([270, 80], [270, 120])
+    d.box(180, 120, 180, 44, "Ada's email + name ✗", { fill: "pink", size: 15 })
+    d.line(372, 5, 372, 170, { dashed: true, color: "gray" })
+    d.text(530, 10, "after", { size: 21, font: "title", weight: 700, color: "green" })
+    const m2 = d.box(384, 30, 96, 50, "Mallory", { fill: "pink", size: 17 })
+    const a2 = d.box(560, 30, 115, 50, "/users/me", { fill: "green", size: 16, font: "bold" })
+    d.arrow(m2.right, a2.left, { label: "her token", size: 13.5 })
+    d.arrow([610, 80], [610, 120])
+    d.box(520, 120, 155, 44, "only her own data ✓", { fill: "green", size: 15 })
+  })
+  </script>
+  <ul class="arrows small">
+    <li>Identity comes from the <b>verified token</b>, never from the URL or body.</li>
+    <li>Every query is scoped: <code>WHERE user_id = :current_user</code>. Test: Bob cannot list or delete Alice's history.</li>
+    <li>For someone else's row we return <b>404, not 403</b>: don't even confirm it exists.</li>
+  </ul>
+  <h2>CORS (Cross-Origin Resource Sharing)</h2>
+  <figure class="sketch"><svg id="d-cors"></svg></figure>
+  <script>
+  sketch("d-cors", 680, 150, (d) => {
+    const b = d.box(8, 40, 170, 70, "browser JS", { fill: "blue", size: 17, sub: "localhost:5173" })
+    const s = d.box(500, 40, 172, 70, "FastAPI", { fill: "green", size: 17, sub: "localhost:8000" })
+    d.arrow([178, 55], [500, 55], { label: "1. OPTIONS (preflight): may I send JSON + Authorization?", size: 13.5 })
+    d.arrow([500, 78], [178, 78], { label: "2. Access-Control-Allow-Origin: localhost:5173 ✓", size: 13.5, color: "green", labelOffset: [0, 12], dashed: true })
+    d.arrow([178, 104], [500, 104], { label: "3. the real POST", size: 13.5, labelOffset: [0, 12] })
+  })
+  </script>
+  <p class="small">Different port = different <b>origin</b>. Browsers block JS from reading cross-origin responses unless the server allows that origin (<code>CORS_ORIGINS</code> setting). Requests with JSON or an <code>Authorization</code> header first send an <code>OPTIONS</code> <b>preflight</b>.
+  <span class="red">CORS protects users' browsers; it is not API authentication</span> (curl ignores it).</p>
+  <h3>Where should the browser keep tokens?</h3>
+  <table class="hand compact">
+    <tr><th>Option</th><th>+</th><th>−</th></tr>
+    <tr><td><b>localStorage</b> (now)</td><td>simple, works with any API host</td><td>readable by injected JS (XSS)</td></tr>
+    <tr><td><b>httpOnly cookie</b> (phase 8)</td><td>JS can't read it → XSS can't steal it</td><td>needs CSRF protection + same-site setup</td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 5 ============================ -->
+<section class="page" data-toc="5 · LLM fundamentals" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 0 · deeper in 1</span></div>
+  <h1 class="chapter"><span class="no">5</span>LLM fundamentals</h1>
+  <h2>An LLM predicts the next token</h2>
+  <figure class="sketch"><svg id="d-next"></svg></figure>
+  <script>
+  sketch("d-next", 680, 250, (d) => {
+    const inp = d.box(5, 60, 165, 62, "“SELECT name\nFROM”", { fill: "gray", size: 17, font: "bold" })
+    const llm = d.box(215, 45, 135, 92, "LLM", { fill: "purple", size: 22, sub: "transformer\nbillions of weights" })
+    d.arrow(inp.right, llm.left, { label: "tokens", size: 14 })
+    d.arrow(llm.right, [400, 91])
+    d.bars(410, 10, 260, 160, [
+      { label: "users", value: 62, top: "0.62", color: "green" },
+      { label: "customers", value: 21, top: "0.21" },
+      { label: "orders", value: 9, top: "0.09" },
+      { label: "products", value: 5, top: "0.05" },
+      { label: "…", value: 3, top: "" },
+    ], { labelSize: 13 })
+    d.text(540, 200, "probability of the next token", { size: 14, color: "gray" })
+    d.arrow([480, 214], [90, 124], { bend: -40, color: "blue", label: "pick “users”, append it, repeat ↺", labelOffset: [0, 16], size: 15 })
+  })
+  </script>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>Token</b> = a chunk of text (≈ 4 characters of English). Models read, bill and limit in tokens.</li>
+      <li><b>Autoregressive</b>: generate one token, append, run again. That's why long answers are slower.</li>
+      <li><b>Context window</b> = max tokens seen at once (input + output). gpt-oss: ~131k. System prompt, schema, history and answer all compete for it.</li>
+    </ul>
+    <figure class="sketch"><svg id="d-temp"></svg></figure>
+  </div>
+  <script>
+  sketch("d-temp", 330, 175, (d) => {
+    d.text(80, 10, "temperature 0.1", { size: 16, font: "title", weight: 700, color: "green" })
+    d.bars(10, 22, 140, 120, [{ label: "A", value: 93, color: "green" }, { label: "B", value: 5 }, { label: "C", value: 1 }, { label: "D", value: 1 }], { max: 100, gap: 8 })
+    d.text(250, 10, "temperature 1.2", { size: 16, font: "title", weight: 700, color: "orange" })
+    d.bars(180, 22, 140, 120, [{ label: "A", value: 38, color: "orange" }, { label: "B", value: 27, color: "orange" }, { label: "C", value: 20, color: "orange" }, { label: "D", value: 15, color: "orange" }], { max: 100, gap: 8 })
+    d.text(80, 170, "focused → SQL", { size: 14, color: "green" })
+    d.text(250, 170, "creative → stories", { size: 14, color: "orange" })
+  })
+  </script>
+  <p><b>Temperature</b> reshapes the probability distribution before sampling: low = almost always the top token
+  (we use <code>0.1</code> for SQL), high = more random/creative.</p>
+  <div class="cols">
+    <div class="warn small"><b>Hallucination</b> = fluent but false output (an invented column). You don't “fix” it inside the model; you reduce it with <b>grounding</b> (RAG), <b>validation</b> (sqlglot) and <b>checking agents</b>.</div>
+    <div class="qa small"><div class="q">Same prompt, different answers. Why?</div><div class="a">Sampling: with temperature/top-p &gt; 0 the next token is drawn at random from the distribution. Even at 0, batching and GPU math can add tiny non-determinism.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Prompts, messages & Groq models">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>Chat messages &amp; prompt templates</h2>
+  <figure class="sketch"><svg id="d-msgs"></svg></figure>
+  <script>
+  sketch("d-msgs", 680, 170, (d) => {
+    d.box(5, 8, 470, 44, "system: You are a senior data engineer… Respond with SQL only.", { fill: "purple", size: 15 })
+    d.box(45, 62, 430, 44, "human: Write a MySQL query for: monthly revenue", { fill: "blue", size: 15 })
+    d.box(85, 116, 390, 44, "ai: SELECT DATE_FORMAT(order_date, '%Y-%m') …", { fill: "green", size: 15 })
+    d.text(575, 30, "standing rules:\npersona, format", { size: 15, color: "purple" })
+    d.text(575, 84, "this request's\ndata", { size: 15, color: "blue" })
+    d.text(575, 138, "the model's reply\n(+ tool messages\nin agents)", { size: 15, color: "green" })
+  })
+  </script>
+  <div class="cols">
+    <div class="code">GENERATE_SQL_PROMPT = ChatPromptTemplate.from_messages([
+  (<span class="s">"system"</span>, <span class="s">"You are a senior data engineer who
+    writes correct {dialect} SQL … SQL only."</span>),
+  (<span class="s">"human"</span>, <span class="s">"Write a {dialect} query for:
+    {question}"</span>),
+])</div>
+    <ul class="arrows small">
+      <li><b>Placeholders</b> are filled by LangChain → prompts are versioned, reusable, testable.</li>
+      <li>Keep user text in the <b>human</b> message; instructions live in <b>system</b>.</li>
+      <li>Our rules: a role, hard constraints, an escape hatch (“put assumptions in <code>--</code> comments”).</li>
+    </ul>
+  </div>
+  <div class="warn small">The old “explain” mode used a system prompt saying <i>“Output only SQL code”</i>, then asked for an explanation. Contradictory prompts = unpredictable output. Now each mode has its own template.</div>
+  <h2>Groq &amp; our two model tiers</h2>
+  <div class="cols wide-left">
+    <figure class="sketch"><svg id="d-moe"></svg></figure>
+    <div class="small">
+      <p><b>Groq</b> runs open models on custom <b>LPU</b> chips (Language Processing Units) → very high tokens/second, generous free tier with rate limits.</p>
+      <p><b>primary</b> <code>openai/gpt-oss-120b</code>: SQL generation & reasoning.<br><b>fast</b> <code>openai/gpt-oss-20b</code>: routing, rewriting, judging.</p>
+      <p>Both are <b>Mixture-of-Experts</b> reasoning models: huge knowledge, only a few experts compute each token (~5B of ~117B params active for the 120b).</p>
+    </div>
+  </div>
+  <script>
+  sketch("d-moe", 390, 215, (d) => {
+    const t = d.box(150, 5, 90, 36, "token", { fill: "gray", size: 16 })
+    const r = d.box(130, 62, 130, 40, "router", { fill: "yellow", size: 17 })
+    d.arrow(t.bottom, r.top)
+    const chosen = [1, 3, 4, 7]
+    for (let i = 0; i < 9; i++) {
+      const x = 8 + i * 42
+      const on = chosen.includes(i)
+      d.box(x, 130, 34, 40, i === 8 ? "…" : "E" + (i + 1), { fill: on ? "orange" : "white", fillStyle: on ? "hachure" : "solid", size: 14 })
+      if (on) d.arrow([195, 102], [x + 17, 130], { color: "orange", width: 1.3 })
+    }
+    d.text(195, 195, "top-4 of 128 experts run per token", { size: 15, color: "orange" })
+  })
+  </script>
+  <div class="warn small">The old code used <code>llama3-70b-8192</code>, which Groq <b>deprecated</b>, so <i>every</i> AI call failed. Model names now live in config (<code>LLM_MODEL_PRIMARY</code>), and we checked the live model list via the API.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="LangChain & LCEL chains">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 0</span></div>
+  <h2>LangChain: chains of Runnables</h2>
+  <figure class="sketch"><svg id="d-lcel"></svg></figure>
+  <script>
+  sketch("d-lcel", 680, 210, (d) => {
+    d.text(340, 14, "chain = prompt | llm | StrOutputParser()", { size: 19, font: "bold" })
+    const a = d.box(2, 75, 100, 64, "{question,\n dialect}", { fill: "gray", size: 14.5, font: "bold" })
+    const b = d.box(135, 65, 125, 84, "ChatPrompt-\nTemplate", { fill: "blue", size: 15, sub: "fills slots" })
+    const c = d.box(292, 65, 105, 84, "ChatGroq", { fill: "purple", size: 16, sub: "calls Groq" })
+    const e = d.box(430, 65, 115, 84, "StrOutput-\nParser", { fill: "green", size: 15, sub: "AIMessage→str" })
+    const f = d.box(578, 65, 98, 84, "extract_sql", { fill: "yellow", size: 15, sub: "unwrap\n```sql" })
+    d.arrow(a.right, b.left)
+    d.arrow(b.right, c.left)
+    d.arrow(c.right, e.left)
+    d.arrow(e.right, f.left)
+    d.text(118, 56, "dict", { size: 13, color: "gray" })
+    d.text(276, 46, "list of\nmessages", { size: 13, color: "gray" })
+    d.text(413, 56, "AIMessage", { size: 13, color: "gray" })
+    d.text(561, 56, "str", { size: 13, color: "gray" })
+    d.text(340, 188, "every block is a Runnable: .invoke() · .ainvoke() · .stream() · .batch()", { size: 16, color: "blue" })
+  })
+  </script>
+  <ul class="arrows">
+    <li><b>LCEL</b> (LangChain Expression Language): the <code>|</code> operator composes Runnables into a <code>RunnableSequence</code>; output of one = input of the next.</li>
+    <li><b>Why LangChain?</b> Swap providers (ChatGroq ⇄ ChatOpenAI) without rewriting code, standard message/tool types, and <b>LangGraph</b> (phase 6) is built on it.</li>
+    <li><b>Defensive parsing:</b> models sometimes ignore “no markdown” and wrap SQL in <code>```sql</code> fences. <code>extract_sql()</code> unwraps them. Phase 1 adds structured JSON output.</li>
+  </ul>
+  <div class="cols">
+    <div class="code"><span class="c"># services/sql.py</span>
+chain = prompt | llm | StrOutputParser()
+<span class="k">try</span>:
+    text = <span class="k">await</span> chain.ainvoke(inputs)
+<span class="k">except</span> Exception <span class="k">as</span> exc:
+    <span class="k">raise</span> LLMServiceError() <span class="k">from</span> exc  <span class="c"># → 502</span></div>
+    <div class="small">
+      <p><b>Resilience:</b> <code>max_retries=2</code> retries rate limits (429) and server errors with exponential backoff; <code>timeout=60s</code> stops hung calls.</p>
+      <p><b>Testing LLM code:</b> <code>FakeListChatModel</code> returns scripted replies: fast, free, deterministic. <span class="hl">Test the plumbing with fakes; measure the model with evals</span> (chapter 7).</p>
+    </div>
+  </div>
+  <div class="qa small"><div class="q">Why not just call the Groq SDK directly?</div><div class="a">For one call, you could. But we'll need prompt templates, structured outputs, tool calling, streaming, tracing and agent graphs across several providers. LangChain standardises those interfaces, so swapping a model or adding a retriever is one line instead of a rewrite.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 6 ============================ -->
+<section class="page" data-toc="6 · RAG" data-toc-level="chapter" data-status="next">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phases 2–4</span></div>
+  <h1 class="chapter"><span class="no">6</span>RAG</h1>
+  <h2>Three ways to give a model new knowledge</h2>
+  <table class="hand">
+    <tr><th>Approach</th><th>How</th><th>Verdict for SQLAssist</th></tr>
+    <tr><td><b>Prompt stuffing</b></td><td>paste the whole schema into every prompt</td><td>fine for 5 tables; breaks at 500 (context limit, cost, “lost in the middle”)</td></tr>
+    <tr><td><b>Fine-tuning</b></td><td>retrain weights on examples</td><td>teaches style, not facts; stale when the schema changes; one model per customer = impossible</td></tr>
+    <tr><td><b>RAG</b> ✓</td><td>fetch only the relevant pieces at question time</td><td>fresh, per-user, cheap, explainable (we can show which tables were used)</td></tr>
+  </table>
+  <figure class="sketch"><svg id="d-rag"></svg></figure>
+  <script>
+  sketch("d-rag", 680, 215, (d) => {
+    d.text(30, 60, "question", { size: 16, color: "gray" })
+    d.arrow([8, 78], [75, 78])
+    const r = d.circle(115, 78, 76, { fill: "blue", label: "R", size: 34, font: "title" })
+    const a = d.circle(340, 78, 76, { fill: "yellow", label: "A", size: 34, font: "title" })
+    const g = d.circle(565, 78, 76, { fill: "green", label: "G", size: 34, font: "title" })
+    d.arrow([155, 78], [300, 78], { label: "top-k chunks", size: 15 })
+    d.arrow([380, 78], [525, 78], { label: "grounded prompt", size: 15 })
+    d.arrow([605, 78], [672, 78])
+    d.text(655, 60, "SQL", { size: 16, color: "gray" })
+    d.text(115, 160, "Retrieve\nsearch the user's schema\nin Qdrant", { size: 16 })
+    d.text(340, 160, "Augment\nput those tables into\nthe prompt", { size: 16 })
+    d.text(565, 160, "Generate\nLLM writes SQL using\nonly real tables", { size: 16 })
+  })
+  </script>
+  <div class="cols">
+    <div class="tip small">“Lost in the middle”: models use the start and end of long contexts best. <b>Fewer, better chunks</b> beat dumping everything.</div>
+    <div class="qa small"><div class="q">RAG or fine-tuning?</div><div class="a">RAG for <b>knowledge</b> that changes or is private (our schemas). Fine-tuning for <b>behaviour</b> (format, tone, a narrow skill). They combine well.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="The two RAG pipelines">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phases 2–4</span></div>
+  <h2>Ingestion vs query pipeline</h2>
+  <figure class="sketch"><svg id="d-pipes"></svg></figure>
+  <script>
+  sketch("d-pipes", 680, 385, (d) => {
+    d.text(6, 12, "INGESTION · offline, once per schema upload (background worker)", { anchor: "start", size: 18, font: "title", weight: 700, color: "orange" })
+    ;["paste SQL", ".sql file", "screenshot"].forEach((t, i) => d.box(4, 30 + i * 29, 100, 25, t, { fill: "gray", size: 14 }))
+    const p = d.box(130, 34, 95, 72, "parse", { fill: "orange", size: 16, sub: "sqlglot +\nvision LLM" })
+    const n = d.box(243, 34, 105, 72, "normalize", { fill: "orange", size: 16, sub: "tables, PK/FK\n→ Postgres" })
+    const c = d.box(366, 34, 90, 72, "chunk", { fill: "orange", size: 16, sub: "1 table =\n1 card" })
+    const e = d.box(474, 34, 85, 72, "embed", { fill: "orange", size: 16, sub: "HF model" })
+    const q = d.box(578, 24, 98, 92, "Qdrant", { shape: "db", fill: "blue", size: 16, sub: "dense +\nBM25 sparse" })
+    d.arrow([104, 70], p.left)
+    d.arrow(p.right, n.left)
+    d.arrow(n.right, c.left)
+    d.arrow(c.right, e.left)
+    d.arrow(e.right, [578, 70])
+    d.line(4, 128, 676, 128, { dashed: true, color: "gray" })
+    d.text(6, 152, "QUERY · online, every question", { anchor: "start", size: 18, font: "title", weight: 700, color: "blue" })
+    const qs = d.box(4, 172, 112, 60, "question +\nchosen tables", { fill: "gray", size: 14 })
+    const rw = d.box(134, 172, 88, 60, "rewrite", { fill: "blue", size: 16, sub: "fast LLM" })
+    const hs = d.box(240, 172, 108, 60, "hybrid search", { fill: "blue", size: 15, sub: "BM25 + dense" })
+    const rr = d.box(366, 172, 80, 60, "RRF", { fill: "blue", size: 16, sub: "fuse" })
+    const fk = d.box(464, 172, 96, 60, "FK expand", { fill: "blue", size: 15, sub: "join paths" })
+    const rk = d.box(578, 172, 98, 60, "rerank", { fill: "blue", size: 16, sub: "cross-enc." })
+    d.arrow(qs.right, rw.left)
+    d.arrow(rw.right, hs.left)
+    d.arrow(hs.right, rr.left)
+    d.arrow(rr.right, fk.left)
+    d.arrow(fk.right, rk.left)
+    d.path([[627, 116], [627, 143], [294, 143], [294, 172]], { dashed: true, color: "blue", label: "reads vectors", labelAt: [470, 156] })
+    const pr = d.box(466, 268, 112, 60, "prompt", { fill: "yellow", size: 16, sub: "schema + rules" })
+    const llm = d.box(330, 268, 112, 60, "LLM", { fill: "purple", size: 17, sub: "gpt-oss-120b" })
+    const v = d.box(190, 268, 115, 60, "validate", { fill: "orange", size: 16, sub: "sqlglot" })
+    const out = d.box(40, 273, 110, 50, "SQL ✓", { fill: "green", size: 18 })
+    d.path([[627, 232], [627, 298], [578, 298]])
+    d.arrow(pr.left, llm.right)
+    d.arrow(llm.left, v.right)
+    d.arrow(v.left, out.right)
+    d.arrow([248, 328], [386, 328], { bend: 30, dashed: true, color: "red", label: "errors → fix & retry", labelOffset: [0, 14], size: 14 })
+  })
+  </script>
+  <ul class="arrows">
+    <li><b>Ingestion</b> is slow (OCR, embeddings) → it runs as a <b>background job</b>; the UI polls/streams progress.</li>
+    <li><b>Query</b> is latency-critical → cheap steps use the fast model; the big model writes the SQL once.</li>
+    <li>Every stage is <b>swappable and measurable</b> separately; that's what makes evaluation (chapter 7) possible.</li>
+  </ul>
+  <div class="tip small"><b>sqlglot</b> is our secret weapon: it parses SQL in 20+ dialects into an AST (syntax tree). Ingestion uses it to extract tables/columns/keys; validation uses it to check generated SQL.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Chunking: schema-aware table cards">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 2</span></div>
+  <h2>Chunking</h2>
+  <p>A <b>chunk</b> is one retrievable unit of knowledge. Too big → noisy context and a blurry embedding. Too small → meaning gets cut in half.</p>
+  <table class="hand compact">
+    <tr><th>Strategy</th><th>Idea</th><th>Good for</th></tr>
+    <tr><td>fixed-size + overlap</td><td>every N tokens, overlapping a bit</td><td>plain prose, quick baseline</td></tr>
+    <tr><td>recursive</td><td>split by sections → paragraphs → sentences</td><td>documents with structure</td></tr>
+    <tr><td>semantic</td><td>split where the meaning shifts (embedding distance)</td><td>long mixed-topic text</td></tr>
+    <tr><td><b>structure-aware</b> ✓</td><td>split along the data's own units</td><td><b>schemas (us)</b>, code, tables</td></tr>
+  </table>
+  <h3>Our unit: one table = one “card”</h3>
+  <div class="cols wide-left">
+    <div class="code">TABLE orders                       (schema: sales)
+Columns:
+  id            INT        PK
+  customer_id   INT        FK → customers.id
+  total_amount  DECIMAL(10,2)
+  status        VARCHAR(20)  -- placed|shipped|refunded
+  created_at    TIMESTAMP
+About: one row per customer order.
+Synonyms: purchases, sales, transactions
+Joins: customers (customer_id), order_items (order_id)</div>
+    <div class="small">
+      <p><span class="red">Never split a CREATE TABLE in half</span>: a chunk holding half the columns causes exactly the hallucinations we want to stop.</p>
+      <p>The <b>About</b> and <b>Synonyms</b> lines are written by the LLM during ingestion, so “purchases” finds <code>orders</code>.</p>
+      <p>Very wide tables (100+ columns) get extra column-group chunks that point back to their parent table.</p>
+    </div>
+  </div>
+  <h3>Payload (metadata) travels with every chunk</h3>
+  <div class="code">{ "workspace_id": "w_42", "schema_id": "s_7", "table": "orders",
+  "columns": ["id", "customer_id", "total_amount", "status", "created_at"],
+  "fk_targets": ["customers", "order_items"], "dialect": "postgres" }</div>
+  <ul class="arrows small">
+    <li><b>filter</b>: search only the user's workspace, or only the tables they picked in the UI</li>
+    <li><b>explain</b>: show the user which tables the answer was built from</li>
+    <li><b>expand</b>: follow <code>fk_targets</code> to pull in join tables (FK-graph expansion)</li>
+  </ul>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Embeddings & similarity">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 3</span></div>
+  <h2>Embeddings: meaning as coordinates</h2>
+  <figure class="sketch"><svg id="d-embed"></svg></figure>
+  <script>
+  sketch("d-embed", 680, 120, (d) => {
+    const t = d.box(4, 30, 210, 56, "“total revenue per customer”", { fill: "gray", size: 15 })
+    const m = d.box(260, 18, 160, 80, "bge-small-en-v1.5", { fill: "purple", size: 16, sub: "embedding model" })
+    const v = d.box(466, 30, 210, 56, "[0.021, −0.113, 0.087, …]", { fill: "blue", size: 15, font: "bold", sub: "384 numbers" })
+    d.arrow(t.right, m.left)
+    d.arrow(m.right, v.left)
+  })
+  </script>
+  <figure class="sketch"><svg id="d-space"></svg></figure>
+  <script>
+  sketch("d-space", 680, 300, (d) => {
+    d.arrow([40, 280], [40, 15])
+    d.arrow([40, 280], [410, 280])
+    const pts = [["customers", 115, 85, "blue"], ["clients", 165, 62, "blue"], ["buyers", 135, 120, "blue"],
+      ["orders", 285, 150, "green"], ["purchases", 330, 122, "green"], ["sales", 300, 185, "green"],
+      ["invoice_lines", 360, 215, "green"], ["server_logs", 375, 40, "gray"], ["audit_events", 95, 240, "gray"]]
+    pts.forEach(([label, x, y, c]) => {
+      d.circle(x, y, 11, { fill: c, fillStyle: "solid" })
+      d.text(x, y - 15, label, { size: 14, color: c === "gray" ? "gray" : "ink" })
+    })
+    d.circle(210, 120, 22, { fill: "yellow", fillStyle: "solid", label: "Q", size: 14 })
+    d.line(210, 120, 135, 120, { dashed: true, color: "red" })
+    d.line(210, 120, 285, 150, { dashed: true, color: "red" })
+    d.text(210, 150, "query: “revenue\nper customer?”", { size: 14, color: "red" })
+    d.text(225, 297, "similar meaning → nearby points (2-D sketch of 384-D space)", { size: 14, color: "gray" })
+    d.arrow([470, 250], [650, 160], { color: "blue", width: 2 })
+    d.arrow([470, 250], [590, 70], { color: "green", width: 2 })
+    d.text(660, 145, "A", { size: 18, color: "blue" })
+    d.text(598, 56, "B", { size: 18, color: "green" })
+    d.arrow([520, 225], [508, 196], { bend: -8, noHead: true, color: "red" })
+    d.text(535, 205, "θ", { size: 20, color: "red" })
+    d.text(565, 280, "cos θ = A·B / (|A| |B|)", { size: 17, font: "bold" })
+  })
+  </script>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>Cosine similarity</b> compares directions: 1 = same meaning, 0 = unrelated, −1 = opposite. Length doesn't matter.</li>
+      <li><b>Bi-encoder</b>: query and documents are embedded <i>separately</i> → document vectors are computed once at ingestion; search is just math.</li>
+      <li>Models come from the <b>Hugging Face Hub</b> (sentence-transformers) and run locally, free.</li>
+    </ul>
+    <div>
+      <div class="warn small">Use the <b>same model</b> for documents and queries. Changing the model = re-embed everything (vectors from different models live in different spaces).</div>
+      <div class="tip small">384 dims (small, fast) vs 768/1024 (richer, more RAM). Start small, measure, upgrade only if recall says so.</div>
+    </div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Vector databases: Qdrant & HNSW">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 3</span></div>
+  <h2>Qdrant: a database for vectors</h2>
+  <figure class="sketch"><svg id="d-qdrant"></svg></figure>
+  <script>
+  sketch("d-qdrant", 680, 250, (d) => {
+    d.box(4, 8, 410, 236, null, { dashed: true })
+    d.text(209, 26, "collection: schema_chunks", { size: 19, font: "title", weight: 700 })
+    const pts = [["orders", "w_42"], ["customers", "w_42"], ["tickets", "w_77"]]
+    pts.forEach(([t, w], i) => {
+      d.box(18, 46 + i * 64, 382, 54, `point · id: 7f3a…  vector: [0.02, −0.11, …]\npayload: {workspace_id: "${w}", table: "${t}"}`, { fill: i === 2 ? "gray" : "blue", size: 14 })
+    })
+    const qv = d.box(450, 12, 225, 48, "query vector", { shape: "ellipse", fill: "yellow", size: 16 })
+    const s = d.box(450, 95, 225, 70, "HNSW search", { fill: "green", size: 17, sub: "+ filter workspace_id = w_42" })
+    const r = d.box(450, 196, 225, 48, "top-k points + scores", { fill: "orange", size: 16 })
+    d.arrow(qv.bottom, s.top)
+    d.arrow(s.bottom, r.top)
+    d.arrow([414, 130], [450, 130], { label: "index", size: 13.5 })
+  })
+  </script>
+  <ul class="arrows small">
+    <li><b>Point</b> = id + vector + <b>payload</b> (JSON metadata). <b>Collection</b> = a set of points with the same vector size and distance metric.</li>
+    <li><b>Multitenancy</b>: one collection for all customers + an indexed <code>workspace_id</code> payload field marked as tenant key. <span class="red">Forget the filter = one customer sees another's schema.</span></li>
+    <li>Qdrant stores <b>sparse vectors</b> (BM25-style keyword weights) next to dense ones → hybrid search with server-side RRF fusion.</li>
+  </ul>
+  <h2>HNSW: how search stays fast</h2>
+  <figure class="sketch"><svg id="d-hnsw"></svg></figure>
+  <script>
+  sketch("d-hnsw", 680, 215, (d) => {
+    const layers = [
+      { y: 30, xs: [120, 380, 600], name: "layer 2 · few nodes, long jumps" },
+      { y: 105, xs: [120, 200, 300, 380, 480, 600], name: "layer 1" },
+      { y: 180, xs: [50, 120, 160, 200, 250, 300, 340, 380, 430, 480, 530, 600, 640], name: "layer 0 · every point" },
+    ]
+    layers.forEach((L) => {
+      for (let i = 0; i < L.xs.length - 1; i++) d.line(L.xs[i], L.y, L.xs[i + 1], L.y, { color: "gray", width: 1.2 })
+      L.xs.forEach((x) => d.circle(x, L.y, 13, { fill: x === 430 && L.y === 180 ? "yellow" : "blue", fillStyle: "solid" }))
+      d.text(8, L.y - 17, L.name, { anchor: "start", size: 13.5, color: "gray" })
+    })
+    const red = { color: "red", width: 2.2 }
+    d.arrow([127, 24], [372, 24], red)
+    d.arrow([380, 37], [380, 98], red)
+    d.arrow([387, 99], [473, 99], red)
+    d.arrow([480, 112], [480, 173], red)
+    d.arrow([473, 188], [437, 188], red)
+    d.text(430, 208, "nearest ★", { size: 14, color: "red" })
+  })
+  </script>
+  <div class="cols">
+    <div class="small"><b>HNSW</b> (Hierarchical Navigable Small World): a layered graph. Start at the sparse top layer, greedily hop toward the query, drop a layer, repeat. It's <b>ANN</b> (approximate nearest neighbour): it may miss the exact best match rarely, but it's orders of magnitude faster than comparing against every vector.</div>
+    <div class="qa small"><div class="q">Why Qdrant instead of FAISS?</div><div class="a">FAISS is a <i>library</i>: an in-process index; you build persistence, filtering, multi-tenancy and an API yourself. Qdrant is a <i>database server</i>: REST/gRPC API, payload filters, snapshots, sparse+dense hybrid, horizontal scaling.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Retrieval: BM25, dense, hybrid (RRF)">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 4</span></div>
+  <h2>Two kinds of search</h2>
+  <div class="cols">
+    <div class="box small">
+      <h3 style="margin-top:0">BM25 · lexical (keywords)</h3>
+      <ul>
+        <li>scores documents by matching <b>words</b></li>
+        <li><b>rare</b> words count more (IDF: “cust_ltv” &gt; “id”)</li>
+        <li>repeating a word helps less and less (saturation, <i>k1</i>)</li>
+        <li>long documents are normalised (<i>b</i>)</li>
+      </ul>
+      <p class="green">✓ exact identifiers: <code>cust_id</code>, <code>tbl_ord_hdr</code></p>
+      <p class="red">✗ blind to synonyms: “buyers” ≠ “customers”</p>
+    </div>
+    <div class="box small">
+      <h3 style="margin-top:0">Dense · semantic (embeddings)</h3>
+      <ul>
+        <li>compares <b>meaning</b> via vectors</li>
+        <li>“buyers” ≈ “customers”, “income” ≈ “revenue”</li>
+        <li>works across phrasing and typos</li>
+        <li>needs an embedding model + vector index</li>
+      </ul>
+      <p class="green">✓ paraphrases and vague questions</p>
+      <p class="red">✗ weak on rare codes and exact names</p>
+    </div>
+  </div>
+  <h2>Hybrid search + Reciprocal Rank Fusion</h2>
+  <p>Run both searches, then merge the <i>rankings</i> (not the raw scores, which live on different scales):</p>
+  <div class="center" style="font-family:var(--bold);font-size:22px;margin:1mm 0 2mm">RRF(d) = Σ<sub>lists</sub> 1 / (k + rank(d))   with k = 60</div>
+  <table class="hand compact">
+    <tr><th>table</th><th>BM25 rank</th><th>dense rank</th><th>RRF score</th><th>final</th></tr>
+    <tr><td><b>orders</b></td><td>1</td><td>2</td><td>1/61 + 1/62 = 0.0325</td><td>🥇 1</td></tr>
+    <tr><td><b>customers</b></td><td>3</td><td>1</td><td>1/63 + 1/61 = 0.0323</td><td>2</td></tr>
+    <tr><td>payments</td><td>2</td><td>—</td><td>1/62 = 0.0161</td><td>3</td></tr>
+    <tr><td>buyers_v2</td><td>—</td><td>3</td><td>1/63 = 0.0159</td><td>4</td></tr>
+  </table>
+  <ul class="arrows small">
+    <li>Documents that <b>both</b> searches like float to the top: agreement wins.</li>
+    <li><i>k</i> = 60 damps the difference between rank 1 and rank 2, so one list can't dominate.</li>
+    <li>No score normalisation needed: only positions are used. That's why RRF is the default fusion in most vector DBs, Qdrant included.</li>
+  </ul>
+  <div class="qa small"><div class="q">Why not just add the two scores?</div><div class="a">BM25 scores are unbounded (e.g. 7.3, 12.9) while cosine similarity is in [−1, 1]. Adding them lets one scale dominate. RRF uses ranks only, so it needs no tuning to combine heterogeneous retrievers.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Reranking, query rewriting & FK expansion">
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 4</span></div>
+  <h2>Reranking: a second, smarter opinion</h2>
+  <figure class="sketch"><svg id="d-rerank"></svg></figure>
+  <script>
+  sketch("d-rerank", 680, 205, (d) => {
+    d.text(165, 10, "bi-encoder (retrieval)", { size: 19, font: "title", weight: 700, color: "blue" })
+    const q = d.box(4, 30, 85, 38, "query", { fill: "gray", size: 15 })
+    const c = d.box(4, 120, 85, 38, "chunk", { fill: "gray", size: 15 })
+    const e1 = d.box(115, 25, 90, 48, "encoder", { fill: "blue", size: 15 })
+    const e2 = d.box(115, 115, 90, 48, "encoder", { fill: "blue", size: 15 })
+    const cos = d.box(235, 65, 90, 56, "cosine", { shape: "ellipse", fill: "yellow", size: 15 })
+    d.arrow(q.right, e1.left)
+    d.arrow(c.right, e2.left)
+    d.arrow(e1.right, [250, 75])
+    d.arrow(e2.right, [250, 112])
+    d.text(165, 190, "fast · chunk vectors precomputed", { size: 14, color: "green" })
+    d.line(345, 5, 345, 200, { dashed: true, color: "gray" })
+    d.text(515, 10, "cross-encoder (reranking)", { size: 19, font: "title", weight: 700, color: "purple" })
+    const pair = d.box(380, 30, 170, 40, "[query ⊕ chunk]", { fill: "gray", size: 15 })
+    const ce = d.box(380, 105, 170, 56, "cross-encoder", { fill: "purple", size: 16, sub: "reads both together" })
+    const sc = d.box(585, 105, 90, 56, "0.93", { fill: "green", size: 20, sub: "relevance" })
+    d.arrow(pair.bottom, ce.top)
+    d.arrow(ce.right, sc.left)
+    d.text(515, 190, "accurate · slow → only the top ~20", { size: 14, color: "orange" })
+  })
+  </script>
+  <p class="small">Pattern: <b>retrieve wide</b> (top 50 with cheap hybrid search) → <b>rerank narrow</b> (cross-encoder scores 20–50 pairs) → keep the best 5–8 for the prompt. Model: <code>bge-reranker-base</code> from Hugging Face.</p>
+  <h2>Fixing the question before searching</h2>
+  <table class="hand compact">
+    <tr><th>Technique</th><th>What it does</th><th>Example</th></tr>
+    <tr><td><b>query rewriting</b></td><td>fast LLM rewrites into schema-friendly terms</td><td>“rev last mo” → “monthly revenue, order totals, last month”</td></tr>
+    <tr><td><b>multi-query</b></td><td>several phrasings, union of results</td><td>“churned users” + “inactive customers” + “cancelled subscriptions”</td></tr>
+    <tr><td><b>HyDE</b></td><td>embed a <i>hypothetical answer</i> instead of the question</td><td>draft SQL/doc → its vector sits close to real matching tables</td></tr>
+  </table>
+  <h2>Our special: foreign-key graph expansion</h2>
+  <figure class="sketch"><svg id="d-fk"></svg></figure>
+  <script>
+  sketch("d-fk", 680, 150, (d) => {
+    const c = d.box(10, 50, 140, 50, "customers", { fill: "green", size: 17 })
+    const o = d.box(260, 50, 140, 50, "orders", { fill: "green", size: 17 })
+    const oi = d.box(510, 50, 160, 50, "order_items", { fill: "yellow", size: 17, dashed: true })
+    d.arrow(o.left, c.right, { label: "customer_id", size: 14 })
+    d.arrow(oi.left, o.right, { label: "order_id", size: 14, color: "orange" })
+    d.text(205, 125, "retrieved by search ✓", { size: 15, color: "green" })
+    d.text(590, 125, "added by graph walk\n(needed for the JOIN)", { size: 15, color: "orange" })
+  })
+  </script>
+  <p class="small">“Revenue per customer <i>by product</i>” needs <code>order_items</code> even if no search ranked it. We walk the FK graph between retrieved tables to add the missing join path.</p>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 7 ============================ -->
+<section class="page" data-toc="7 · RAG evaluation" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>7 · RAG evaluation</span><span class="stamp next">COMING · phase 5</span></div>
+  <h1 class="chapter"><span class="no">7</span>RAG evaluation</h1>
+  <p><span class="hl">If you can't measure it, you're guessing.</span> Changing the chunk format, embedding model or a prompt can silently
+  make results worse. Evaluation turns “feels better” into numbers you can compare in CI.</p>
+  <h2>The RAG triad</h2>
+  <figure class="sketch"><svg id="d-triad"></svg></figure>
+  <script>
+  sketch("d-triad", 680, 235, (d) => {
+    const q = d.box(265, 8, 150, 50, "question", { fill: "blue", size: 18 })
+    const c = d.box(25, 170, 175, 54, "retrieved context", { fill: "orange", size: 17 })
+    const a = d.box(480, 170, 175, 54, "answer / SQL", { fill: "green", size: 17 })
+    d.arrow([265, 50], [140, 170], { both: true, label: "context relevance\nright tables?", labelOffset: [-70, -8], size: 15 })
+    d.arrow([200, 197], [480, 197], { both: true, label: "faithfulness\nonly uses the context?", labelOffset: [0, -24], size: 15 })
+    d.arrow([415, 50], [540, 170], { both: true, label: "answer relevance\nanswers the question?", labelOffset: [78, -8], size: 15 })
+  })
+  </script>
+  <p>Evaluate the <b>retriever</b> (did we fetch the right tables?) and the <b>generator</b> (did we write correct SQL from them?) <i>separately</i>, or you can't tell which one broke.</p>
+  <h2>The golden dataset</h2>
+  <div class="cols wide-left">
+    <div class="code">{
+  <span class="s">"question"</span>: <span class="s">"monthly revenue in 2025"</span>,
+  <span class="s">"relevant_tables"</span>: [<span class="s">"orders"</span>],
+  <span class="s">"gold_sql"</span>: <span class="s">"SELECT date_trunc('month', created_at) …"</span>,
+  <span class="s">"difficulty"</span>: <span class="s">"easy"</span>,
+  <span class="s">"schema"</span>: <span class="s">"ecommerce_v1"</span>
+}</div>
+    <ul class="arrows small">
+      <li><b>hand-written</b>: ~50 high-quality cases you trust</li>
+      <li><b>synthetic</b>: an LLM drafts questions from the schema; a human reviews them</li>
+      <li><b>benchmarks</b>: subsets of Spider and BIRD (public text-to-SQL datasets)</li>
+    </ul>
+  </div>
+  <table class="hand compact">
+    <tr><th></th><th>offline eval</th><th>online eval</th></tr>
+    <tr><td>when</td><td>before deploying (CI, experiments)</td><td>in production, on real traffic</td></tr>
+    <tr><td>data</td><td>golden dataset with known answers</td><td>user 👍/👎, edits to the SQL, failure rates, latency</td></tr>
+    <tr><td>answers</td><td>“is version B better than A?”</td><td>“is it working for users right now?”</td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Retrieval metrics, worked by hand">
+  <div class="page-head"><span>7 · RAG evaluation</span><span class="stamp next">COMING · phase 5</span></div>
+  <h2>Retrieval metrics, worked by hand</h2>
+  <p>The question needs 3 tables: <b>orders, customers, order_items</b>. Our retriever returns this top-5:</p>
+  <figure class="sketch"><svg id="d-ranked"></svg></figure>
+  <script>
+  sketch("d-ranked", 680, 120, (d) => {
+    const items = [["orders", true], ["payments", false], ["customers", true], ["products", false], ["refunds", false]]
+    items.forEach(([t, ok], i) => {
+      const x = 6 + i * 135
+      d.box(x, 30, 125, 46, `${i + 1}. ${t}`, { fill: ok ? "green" : "pink", size: 16 })
+      ok ? d.check(x + 62, 12) : d.cross(x + 62, 12)
+    })
+    d.text(340, 102, "missed: order_items (relevant but not retrieved)", { size: 16, color: "red" })
+  })
+  </script>
+  <table class="hand">
+    <tr><th>Metric</th><th>Formula</th><th>Here</th><th>Asks…</th></tr>
+    <tr><td><b>Precision@5</b></td><td>relevant retrieved ÷ k</td><td>2 / 5 = <b>0.40</b></td><td>how much junk did we fetch?</td></tr>
+    <tr><td><b>Recall@5</b></td><td>relevant retrieved ÷ all relevant</td><td>2 / 3 = <b>0.67</b></td><td>did we miss anything?</td></tr>
+    <tr><td><b>Hit rate@5</b></td><td>1 if any relevant in top-k</td><td><b>1</b></td><td>did we get at least one?</td></tr>
+    <tr><td><b>MRR</b></td><td>1 ÷ rank of first relevant (averaged over questions)</td><td>1 / 1 = <b>1.0</b></td><td>how soon is the first good hit?</td></tr>
+    <tr><td><b>nDCG@5</b></td><td>DCG ÷ ideal DCG</td><td><b>0.70</b> (below)</td><td>are relevant items ranked high?</td></tr>
+  </table>
+  <div class="box">
+    <b>nDCG step by step</b> (relevance 1 = relevant, 0 = not; position <i>i</i> is discounted by log₂(i+1)):
+    <div class="code" style="border:none;background:none;margin:1mm 0 0;padding:0">DCG  = 1/log₂2 + 0/log₂3 + 1/log₂4 + 0 + 0  = 1 + 0 + 0.5        = 1.500
+IDCG = 1/log₂2 + 1/log₂3 + 1/log₂4          = 1 + 0.631 + 0.5    = 2.131   <span class="c">(perfect order: 3 relevant first)</span>
+nDCG = 1.500 / 2.131 = 0.70</div>
+  </div>
+  <div class="cols">
+    <div class="tip small">For text-to-SQL, <b>recall</b> is king: one missing table = a broken JOIN. We'd rather send 6 tables with 1 extra than 4 with 1 missing. Rerankers then fix precision.</div>
+    <div class="qa small"><div class="q">MRR vs nDCG?</div><div class="a">MRR only looks at the <i>first</i> relevant hit (good when one answer suffices). nDCG rewards the <i>whole</i> ranking, with graded relevance; better when several items are needed, like our tables.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Generation & text-to-SQL metrics">
+  <div class="page-head"><span>7 · RAG evaluation</span><span class="stamp next">COMING · phase 5</span></div>
+  <h2>Judging the generated answer</h2>
+  <table class="hand compact">
+    <tr><th>Metric (RAGAS-style)</th><th>Question it answers</th><th>Needs ground truth?</th></tr>
+    <tr><td><b>faithfulness</b></td><td>is every claim in the answer supported by the retrieved context? (anti-hallucination)</td><td>no</td></tr>
+    <tr><td><b>answer relevancy</b></td><td>does the answer address what was asked?</td><td>no</td></tr>
+    <tr><td><b>context precision</b></td><td>are the useful chunks ranked at the top?</td><td>yes</td></tr>
+    <tr><td><b>context recall</b></td><td>does the context contain everything the gold answer needs?</td><td>yes</td></tr>
+  </table>
+  <h2>Text-to-SQL: exact match vs execution accuracy</h2>
+  <figure class="sketch"><svg id="d-emex"></svg></figure>
+  <script>
+  sketch("d-emex", 680, 190, (d) => {
+    const g = d.box(4, 10, 300, 70, "gold:  SELECT name FROM customers\n       WHERE country = 'IN';", { fill: "blue", size: 14.5, font: "bold" })
+    const p = d.box(4, 108, 300, 70, "ours:  SELECT c.name FROM customers c\n       WHERE c.country IN ('IN');", { fill: "purple", size: 14.5, font: "bold" })
+    const em = d.box(350, 12, 135, 66, "exact match?", { fill: "yellow", size: 16, shape: "diamond" })
+    const ex = d.box(350, 112, 135, 60, "run both on\nsandbox DB", { fill: "orange", size: 15 })
+    d.arrow([304, 40], [350, 45])
+    d.arrow([304, 140], [350, 142])
+    d.box(525, 20, 150, 50, "✗ text differs", { fill: "pink", size: 16 })
+    d.box(525, 115, 150, 54, "✓ same rows\nEX = 1", { fill: "green", size: 16 })
+    d.arrow([485, 45], [525, 45])
+    d.arrow([485, 142], [525, 142])
+  })
+  </script>
+  <ul class="arrows small">
+    <li><b>Valid-SQL rate</b>: does it parse for the dialect (sqlglot)? Cheapest check, run on everything.</li>
+    <li><b>Exact match (EM)</b>: same text/AST as gold. Too strict: many correct queries look different.</li>
+    <li><b>Execution accuracy (EX)</b>: run predicted and gold SQL on a seeded sandbox database and compare result sets. <span class="hl">The gold standard</span> (used by Spider &amp; BIRD).</li>
+  </ul>
+  <div class="cols">
+    <div class="small"><b>LLM-as-judge:</b> a strong model grades answers against a rubric. Known biases: <i>position</i> (prefers the first option), <i>verbosity</i> (prefers longer), <i>self-preference</i> (likes its own family's outputs). Mitigate: clear rubrics, swap order, spot-check with humans.</div>
+    <figure class="sketch"><svg id="d-gate"></svg></figure>
+  </div>
+  <script>
+  sketch("d-gate", 330, 175, (d) => {
+    const pr = d.box(4, 10, 95, 44, "PR opened", { fill: "gray", size: 14 })
+    const ev = d.box(120, 10, 95, 44, "run golden\nset", { fill: "blue", size: 14 })
+    const g = d.box(235, 0, 92, 64, "recall ≥ .9\nEX ≥ .8 ?", { shape: "diamond", fill: "yellow", size: 13 })
+    d.arrow(pr.right, ev.left)
+    d.arrow(ev.right, [235, 32])
+    d.box(150, 110, 80, 40, "merge ✓", { fill: "green", size: 15 })
+    d.box(250, 110, 76, 40, "block ✗", { fill: "pink", size: 15 })
+    d.arrow([270, 60], [195, 110], { color: "green", label: "yes", labelOffset: [-14, -2], size: 13 })
+    d.arrow([287, 62], [288, 110], { color: "red", label: "no", labelOffset: [12, 0], size: 13 })
+    d.text(80, 135, "eval as a\nquality gate", { size: 15, color: "gray" })
+  })
+  </script>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 8 ============================ -->
+<section class="page" data-toc="8 · Agents" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>8 · Agents</span><span class="stamp next">COMING · phase 6</span></div>
+  <h1 class="chapter"><span class="no">8</span>Agents</h1>
+  <p>An <b>agent</b> is an LLM that <span class="hl">decides what to do next</span>: it calls tools, looks at the results and loops until the
+  task is done. <b>Agent = LLM (brain) + tools (hands) + state/memory + a control loop.</b></p>
+  <figure class="sketch"><svg id="d-spectrum"></svg></figure>
+  <script>
+  sketch("d-spectrum", 680, 150, (d) => {
+    const items = [["chain", "prompt | llm", "gray"], ["router", "LLM picks a branch", "blue"], ["tool-calling agent", "loops until done", "purple"], ["multi-agent", "specialists + supervisor", "orange"]]
+    items.forEach(([t, s, f], i) => d.box(4 + i * 170, 10, 160, 66, t, { fill: f, size: 17, sub: s }))
+    d.arrow([10, 105], [670, 105], { width: 2, label: "more autonomy →", labelOffset: [0, -12], size: 16 })
+    d.text(90, 132, "predictable · cheap · testable", { size: 15, color: "green" })
+    d.text(570, 132, "flexible · costly · harder to test", { size: 15, color: "red" })
+  })
+  </script>
+  <div class="tip small">Use the <b>least autonomy</b> that solves the problem. Our SQL flow is mostly a fixed graph with a few LLM decisions, not a free-roaming agent.</div>
+  <h2>Tool calling, step by step</h2>
+  <figure class="sketch"><svg id="d-tools"></svg></figure>
+  <script>
+  sketch("d-tools", 680, 285, (d) => {
+    d.sequence({
+      actors: [{ id: "app", label: "our app", fill: "blue" }, { id: "llm", label: "LLM", fill: "purple" }, { id: "tool", label: "search_schema()", fill: "orange", size: 15 }],
+      steps: [
+        { from: "app", to: "llm", label: "messages + tool schemas (JSON)" },
+        { from: "llm", to: "app", label: "tool_call: search_schema({query: 'revenue'})", reply: true },
+        { from: "app", to: "tool", label: "run the Python function" },
+        { from: "tool", to: "app", label: "[orders card, payments card]", reply: true },
+        { from: "app", to: "llm", label: "ToolMessage(result)" },
+        { from: "llm", to: "app", label: "final answer: SELECT …", reply: true, color: "green" },
+        { note: "the model only ASKS for a call · our code decides whether and how to run it" },
+      ],
+    })
+  })
+  </script>
+  <div class="qa small"><div class="q">Can the LLM run code or query the database by itself?</div><div class="a">No. It outputs a structured request (tool name + JSON arguments). Our application validates it, executes it with <i>our</i> permissions, and returns the result as a message. That boundary is where guardrails live.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="ReAct & LangGraph">
+  <div class="page-head"><span>8 · Agents</span><span class="stamp next">COMING · phase 6</span></div>
+  <h2>ReAct: reason + act</h2>
+  <figure class="sketch"><svg id="d-react"></svg></figure>
+  <script>
+  sketch("d-react", 680, 185, (d) => {
+    const t = d.box(4, 40, 190, 70, "Thought", { shape: "ellipse", fill: "blue", size: 18, sub: "“I need the orders table”" })
+    const a = d.box(245, 40, 190, 70, "Action", { shape: "ellipse", fill: "orange", size: 18, sub: "search_schema('orders')" })
+    const o = d.box(486, 40, 190, 70, "Observation", { shape: "ellipse", fill: "green", size: 18, sub: "orders card returned" })
+    d.arrow(t.right, a.left)
+    d.arrow(a.right, o.left)
+    d.arrow([580, 112], [100, 112], { bend: -42, color: "blue", label: "repeat until enough information", labelOffset: [0, 14], size: 15 })
+    d.arrow([100, 40], [100, 4], { color: "green" })
+    d.text(112, 8, "final answer", { anchor: "start", size: 15, color: "green" })
+  })
+  </script>
+  <h2>LangGraph: agents as state machines</h2>
+  <figure class="sketch"><svg id="d-graph"></svg></figure>
+  <script>
+  sketch("d-graph", 680, 245, (d) => {
+    const s = d.box(4, 92, 70, 44, "START", { shape: "ellipse", fill: "gray", size: 14 })
+    const r = d.box(105, 87, 120, 54, "retrieve", { fill: "blue", size: 17 })
+    const g = d.box(260, 87, 120, 54, "generate", { fill: "purple", size: 17 })
+    const v = d.box(415, 87, 120, 54, "validate", { fill: "orange", size: 17 })
+    const e = d.box(600, 92, 76, 44, "END", { shape: "ellipse", fill: "gray", size: 14 })
+    d.arrow(s.right, r.left)
+    d.arrow(r.right, g.left)
+    d.arrow(g.right, v.left)
+    d.arrow(v.right, e.left, { color: "green", label: "valid ✓", size: 14 })
+    d.arrow([475, 87], [320, 87], { bend: 42, color: "red", dashed: true, label: "errors → fix (max 3)", labelOffset: [0, -12], size: 14 })
+    d.box(105, 180, 430, 52, "State: question · tables · sql · errors · attempts", { dashed: true, fill: "yellow", size: 16 })
+    ;[165, 320, 475].forEach((x) => d.line(x, 141, x, 180, { dashed: true, color: "gray" }))
+  })
+  </script>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>State</b>: a typed dict shared by all nodes.</li>
+      <li><b>Node</b>: a function <code>state → partial update</code> (may call an LLM or a tool).</li>
+      <li><b>Edge</b>: fixed next step. <b>Conditional edge</b>: a function picks the next node.</li>
+      <li><b>Reducer</b>: how updates merge (e.g. <code>add_messages</code> appends instead of overwriting).</li>
+      <li><b>Checkpointer</b>: saves state after every step → memory, resume, human-in-the-loop.</li>
+    </ul>
+    <div class="code">graph = StateGraph(SQLState)
+graph.add_node(<span class="s">"retrieve"</span>, retrieve)
+graph.add_node(<span class="s">"generate"</span>, generate)
+graph.add_node(<span class="s">"validate"</span>, validate)
+graph.add_edge(START, <span class="s">"retrieve"</span>)
+graph.add_edge(<span class="s">"retrieve"</span>, <span class="s">"generate"</span>)
+graph.add_edge(<span class="s">"generate"</span>, <span class="s">"validate"</span>)
+graph.add_conditional_edges(<span class="s">"validate"</span>,
+    route, {<span class="s">"fix"</span>: <span class="s">"generate"</span>, <span class="s">"done"</span>: END})
+app = graph.compile(checkpointer=saver)</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Our agent team">
+  <div class="page-head"><span>8 · Agents</span><span class="stamp next">COMING · phase 6</span></div>
+  <h2>The SQLAssist agent team</h2>
+  <figure class="sketch"><svg id="d-team"></svg></figure>
+  <script>
+  sketch("d-team", 680, 395, (d) => {
+    const router = d.box(255, 8, 170, 54, "Router / Intent", { fill: "yellow", size: 17, sub: "fast model" })
+    const ret = d.box(15, 105, 150, 56, "Retriever", { fill: "blue", size: 17, sub: "hybrid search" })
+    const opt = d.box(380, 105, 140, 56, "Optimizer", { fill: "orange", size: 17, sub: "rewrite + index tips" })
+    const exp = d.box(540, 105, 135, 56, "Explainer", { fill: "green", size: 17, sub: "plain English" })
+    const gen = d.box(15, 205, 150, 56, "SQL Generator", { fill: "purple", size: 16, sub: "primary model" })
+    const val = d.box(215, 205, 160, 56, "Validator / Critic", { fill: "orange", size: 16, sub: "sqlglot + schema" })
+    const saf = d.box(215, 305, 160, 56, "Safety Guard", { fill: "pink", size: 17, sub: "read-only policy" })
+    const ans = d.box(430, 310, 110, 46, "answer ✓", { shape: "ellipse", fill: "green", size: 16 })
+    const hitl = d.box(15, 300, 150, 66, "human approval", { dashed: true, fill: "gray", size: 15, sub: "HITL · non-SELECT" })
+    d.arrow([270, 62], ret.top, { label: "generate", labelOffset: [-20, -10], size: 14 })
+    d.arrow([340, 62], [295, 205], { label: "debug", labelOffset: [-26, -20], size: 14 })
+    d.arrow([390, 62], opt.top, { label: "optimize", labelOffset: [26, -4], size: 14 })
+    d.arrow([420, 55], exp.top, { label: "explain", labelOffset: [24, -8], size: 14 })
+    d.arrow(ret.bottom, gen.top)
+    d.arrow(gen.right, val.left)
+    d.arrow([295, 205], [90, 205], { bend: 30, dashed: true, color: "red", label: "errors (≤ 3 tries)", labelOffset: [0, -10], size: 14 })
+    d.arrow(opt.bottom, [350, 205])
+    d.arrow(val.bottom, saf.top)
+    d.arrow(saf.right, ans.left)
+    d.arrow(exp.bottom, [500, 310])
+    d.arrow(saf.left, hitl.right, { dashed: true })
+    d.box(15, 8, 165, 60, "Schema Ingestion", { dashed: true, fill: "blue", size: 15, sub: "own graph · upload flow" })
+    d.text(340, 388, "dashed red = reflection loop: the critic's errors are fed back to the generator", { size: 14, color: "red" })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Agent</th><th>Job</th><th>Model</th><th>Tools</th></tr>
+    <tr><td>Router</td><td>classify intent: generate / debug / optimize / explain / chat</td><td>fast</td><td>—</td></tr>
+    <tr><td>Schema Ingestion</td><td>turn messy input (text, screenshots) into DDL; ask when unclear</td><td>primary + vision</td><td>sqlglot</td></tr>
+    <tr><td>Retriever</td><td>rewrite query, hybrid search, retry if confidence is low</td><td>fast</td><td>Qdrant, FK graph</td></tr>
+    <tr><td>SQL Generator</td><td>write SQL from retrieved tables only</td><td>primary</td><td>—</td></tr>
+    <tr><td>Validator / Critic</td><td>parse, check every table/column exists, report errors</td><td>fast</td><td>sqlglot, schema lookup</td></tr>
+    <tr><td>Safety Guard</td><td>block destructive SQL &amp; prompt injection</td><td>fast + Prompt Guard</td><td>AST policy</td></tr>
+    <tr><td>Optimizer · Explainer</td><td>performance rewrite + index tips · plain-English walkthrough</td><td>primary · fast</td><td>sqlglot</td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 9 ============================ -->
+<section class="page" data-toc="9 · Memory management" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>9 · Memory management</span><span class="stamp next">COMING · phase 6</span></div>
+  <h1 class="chapter"><span class="no">9</span>Memory management</h1>
+  <p>LLMs are <b>stateless</b>: every call starts from zero. “Memory” is whatever <i>we</i> decide to put back into the context window.</p>
+  <figure class="sketch"><svg id="d-mem"></svg></figure>
+  <script>
+  sketch("d-mem", 680, 280, (d) => {
+    d.box(4, 8, 320, 195, null, { fill: "blue", hachureGap: 9 })
+    d.text(164, 26, "short-term: one thread", { size: 20, font: "title", weight: 700 })
+    d.box(20, 48, 250, 34, "Q1: revenue by month", { fill: "white", fillStyle: "solid", size: 15 })
+    d.box(50, 90, 250, 34, "A1: SELECT date_trunc(…)", { fill: "white", fillStyle: "solid", size: 15 })
+    d.box(20, 132, 290, 34, "Q2: “now only for 2024” ← needs Q1!", { fill: "white", fillStyle: "solid", size: 15 })
+    d.text(164, 188, "thread_id = 42", { size: 15, color: "gray" })
+    const cp = d.box(90, 218, 150, 58, "checkpointer", { shape: "db", fill: "gray", size: 15, sub: "Postgres" })
+    d.arrow([164, 203], cp.top)
+    d.text(250, 247, "state saved after\nevery step", { anchor: "start", size: 14, color: "gray" })
+    d.box(356, 8, 320, 195, null, { fill: "purple", hachureGap: 9 })
+    d.text(516, 26, "long-term: across threads", { size: 20, font: "title", weight: 700 })
+    ;["prefs: dialect = MySQL", "favourite tables: orders, customers", "learned: “revenue” = net of refunds"].forEach((t, i) =>
+      d.box(372, 48 + i * 42, 290, 34, t, { fill: "white", fillStyle: "solid", size: 15 }))
+    d.text(516, 188, "Store · namespace (user_id, \"memories\")", { size: 15, color: "gray" })
+  })
+  </script>
+  <h3>The context budget (it all has to fit)</h3>
+  <figure class="sketch"><svg id="d-budget"></svg></figure>
+  <script>
+  sketch("d-budget", 680, 92, (d) => {
+    const parts = [["system", 5, "purple"], ["retrieved schema", 35, "blue"], ["chat history", 25, "orange"], ["question", 5, "gray"], ["reserved for the answer", 30, "green"]]
+    let x = 4
+    parts.forEach(([t, pct, fill]) => {
+      const w = (672 * pct) / 100
+      d.box(x, 10, w, 46, pct >= 25 ? t : "", { fill, size: 15 })
+      d.text(x + w / 2, 72, pct >= 25 ? pct + "%" : t + " " + pct + "%", { size: 13.5, color: "gray" })
+      x += w
+    })
+  })
+  </script>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>trim</b>: keep only the last N turns</li>
+      <li><b>summarise</b>: fast model compresses old turns into a paragraph</li>
+      <li><b>retrieve</b>: store past turns as vectors, fetch only relevant ones (memory as RAG)</li>
+      <li><b>drop tool outputs</b> once used (big schema cards add up fast)</li>
+    </ul>
+    <div class="small">
+      <p><b>Memory types</b> (LangGraph vocabulary): <i>semantic</i> = facts (“user prefers MySQL”), <i>episodic</i> = past experiences/examples (a query the user corrected), <i>procedural</i> = instructions (prompt rules the agent refines).</p>
+      <div class="warn">Memory is <b>user data</b>: tenant-isolated, and deleted with the account.</div>
+    </div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 10 ============================ -->
+<section class="page" data-toc="10 · Human-in-the-loop" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>10 · Human-in-the-loop</span><span class="stamp next">COMING · phase 6</span></div>
+  <h1 class="chapter"><span class="no">10</span>Human-in-the-loop</h1>
+  <p><b>HITL</b> = the graph <span class="hl">pauses</span> at a chosen point, a human answers / approves / edits, and the graph <span class="hl">resumes exactly where it stopped</span>.</p>
+  <figure class="sketch"><svg id="d-hitl"></svg></figure>
+  <script>
+  sketch("d-hitl", 680, 310, (d) => {
+    const r = d.box(4, 30, 105, 52, "retrieve", { fill: "blue", size: 16 })
+    const g = d.box(130, 30, 110, 52, "generate", { fill: "purple", size: 16 })
+    const i = d.box(262, 22, 150, 68, "approval node", { fill: "orange", size: 16, sub: "interrupt({…})" })
+    d.arrow(r.right, g.left)
+    d.arrow(g.right, i.left)
+    const ui = d.box(470, 8, 205, 96, "UI asks the human:\n“This DELETEs 1,204 rows.\nApprove / Edit / Reject?”", { fill: "yellow", size: 15 })
+    d.arrow(i.right, [470, 56], { label: "payload", size: 13.5 })
+    const cp = d.box(262, 130, 150, 76, "⏸ paused", { shape: "db", fill: "gray", size: 16, sub: "state saved by\ncheckpointer" })
+    d.arrow(i.bottom, cp.top)
+    const res = d.box(470, 140, 205, 60, "Command(resume=\n{\"approved\": True})", { fill: "green", size: 15, font: "bold" })
+    d.arrow(ui.bottom, res.top, { label: "human decides", labelOffset: [52, 0], size: 13.5 })
+    const cont = d.box(200, 245, 280, 54, "graph continues from the same node", { fill: "blue", size: 16 })
+    d.arrow([520, 200], [430, 245])
+    d.arrow([337, 206], [337, 245], { label: "state reloaded", labelOffset: [-55, 0], size: 13.5 })
+  })
+  </script>
+  <div class="cols">
+    <div>
+      <h3>Patterns</h3>
+      <ul class="arrows small">
+        <li><b>approve / reject</b> a risky action</li>
+        <li><b>edit state</b>: fix tables or SQL before continuing</li>
+        <li><b>answer a clarification</b>: “gross or net revenue?”</li>
+        <li><b>review tool calls</b> before they run</li>
+      </ul>
+      <h3>Where SQLAssist uses it</h3>
+      <ul class="arrows small">
+        <li>ambiguous question → ask instead of guessing</li>
+        <li>confirm selected tables before generating</li>
+        <li>any non-SELECT statement needs explicit approval</li>
+      </ul>
+    </div>
+    <div>
+      <div class="code"><span class="k">from</span> langgraph.types <span class="k">import</span> interrupt, Command
+
+<span class="k">def</span> approval(state):
+    decision = interrupt({<span class="s">"sql"</span>: state[<span class="s">"sql"</span>]})
+    <span class="k">return</span> {<span class="s">"approved"</span>: decision[<span class="s">"approved"</span>]}
+
+<span class="c"># later, when the user clicks Approve:</span>
+graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
+             config={<span class="s">"configurable"</span>: {<span class="s">"thread_id"</span>: <span class="s">"42"</span>}})</div>
+      <div class="warn small">HITL <b>requires a checkpointer</b> (Postgres-backed in production) so a paused run survives restarts, and the same <code>thread_id</code> to resume the right run.</div>
+    </div>
+  </div>
+  <div class="qa small"><div class="q">Why HITL instead of a better prompt?</div><div class="a">Some decisions need information or <i>authority</i> only the human has (which revenue definition, whether deleting is OK). Prompts can't create that; a pause can. It also builds trust and audit trails.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 11 ============================ -->
+<section class="page" data-toc="11 · MCP" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>11 · MCP</span><span class="stamp next">COMING · phase 7</span></div>
+  <h1 class="chapter"><span class="no">11</span>MCP · Model Context Protocol</h1>
+  <p>An open standard for connecting AI applications to tools and data: <span class="hl">“USB-C for AI apps”</span>. Build a tool
+  once as an MCP <b>server</b>; any MCP-capable app can use it.</p>
+  <figure class="sketch"><svg id="d-nxm"></svg></figure>
+  <script>
+  sketch("d-nxm", 680, 205, (d) => {
+    d.text(160, 10, "without MCP", { size: 20, font: "title", weight: 700, color: "red" })
+    const apps = ["Claude", "Cursor", "our app"], tools = ["Postgres", "GitHub", "SQLAssist"]
+    apps.forEach((a, i) => d.box(4, 30 + i * 50, 85, 38, a, { fill: "blue", size: 15 }))
+    tools.forEach((t, i) => d.box(225, 30 + i * 50, 95, 38, t, { fill: "orange", size: 15 }))
+    apps.forEach((_, i) => tools.forEach((__, j) => d.line(89, 49 + i * 50, 225, 49 + j * 50, { color: "red", width: 1.1 })))
+    d.text(160, 192, "N × M = 9 custom integrations", { size: 16, color: "red" })
+    d.line(340, 5, 340, 200, { dashed: true, color: "gray" })
+    d.text(510, 10, "with MCP", { size: 20, font: "title", weight: 700, color: "green" })
+    apps.forEach((a, i) => d.box(355, 30 + i * 50, 85, 38, a, { fill: "blue", size: 15 }))
+    tools.forEach((t, i) => d.box(580, 30 + i * 50, 95, 38, t, { fill: "orange", size: 15 }))
+    const hub = d.box(477, 75, 66, 48, "MCP", { fill: "yellow", size: 17 })
+    apps.forEach((_, i) => d.line(440, 49 + i * 50, 477, 99, { color: "green", width: 1.3 }))
+    tools.forEach((_, j) => d.line(543, 99, 580, 49 + j * 50, { color: "green", width: 1.3 }))
+    d.text(510, 192, "N + M = 6 · one protocol", { size: 16, color: "green" })
+  })
+  </script>
+  <figure class="sketch"><svg id="d-mcp"></svg></figure>
+  <script>
+  sketch("d-mcp", 680, 225, (d) => {
+    d.box(4, 8, 300, 210, null, { fill: "gray", hachureGap: 9 })
+    d.text(154, 24, "HOST (Claude Desktop / Cursor / our app)", { size: 15, font: "bold" })
+    d.box(18, 80, 95, 56, "LLM", { shape: "ellipse", fill: "purple", size: 17 })
+    ;[0, 1, 2].forEach((i) => d.box(150, 45 + i * 58, 140, 44, "MCP client " + (i + 1), { fill: "blue", size: 15 }))
+    const servers = [["SQLAssist server", "Qdrant + DB"], ["Postgres server", "a database"], ["GitHub server", "GitHub API"]]
+    servers.forEach(([s, data], i) => {
+      const y = 45 + i * 58
+      d.box(390, y, 145, 44, s, { fill: "yellow", size: 15 })
+      d.box(575, y - 4, 100, 52, data, { shape: "db", fill: "green", size: 13.5 })
+      d.arrow([290, y + 22], [390, y + 22], { both: true, label: i === 0 ? "JSON-RPC" : "", size: 13.5 })
+      d.arrow([535, y + 22], [575, y + 22])
+    })
+    d.text(470, 214, "each client holds a 1:1 connection to one server", { size: 14, color: "gray" })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Primitive</th><th>Offered by</th><th>Controlled by</th><th>Example in SQLAssist</th></tr>
+    <tr><td><b>Tools</b></td><td>server</td><td>the model (it decides to call)</td><td><code>generate_sql</code>, <code>validate_sql</code></td></tr>
+    <tr><td><b>Resources</b></td><td>server</td><td>the application (attaches as context)</td><td><code>schema://w_42/orders</code> table card</td></tr>
+    <tr><td><b>Prompts</b></td><td>server</td><td>the user (picks a template)</td><td>“optimize this query” template</td></tr>
+    <tr><td><b>Sampling · Roots · Elicitation</b></td><td>client</td><td>host/user</td><td>server borrows the host's LLM · allowed paths · asks user for input</td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="MCP protocol, transports & lifecycle">
+  <div class="page-head"><span>11 · MCP</span><span class="stamp next">COMING · phase 7</span></div>
+  <h2>Under the hood: JSON-RPC 2.0</h2>
+  <div class="cols">
+    <div class="code"><span class="c">// client → server</span>
+{ <span class="s">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="s">"id"</span>: 7,
+  <span class="s">"method"</span>: <span class="s">"tools/call"</span>,
+  <span class="s">"params"</span>: {
+    <span class="s">"name"</span>: <span class="s">"generate_sql"</span>,
+    <span class="s">"arguments"</span>: {
+      <span class="s">"question"</span>: <span class="s">"monthly revenue"</span>,
+      <span class="s">"dialect"</span>: <span class="s">"PostgreSQL"</span> } } }</div>
+    <div class="code"><span class="c">// server → client (same id)</span>
+{ <span class="s">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="s">"id"</span>: 7,
+  <span class="s">"result"</span>: {
+    <span class="s">"content"</span>: [
+      { <span class="s">"type"</span>: <span class="s">"text"</span>,
+        <span class="s">"text"</span>: <span class="s">"SELECT date_trunc(…"</span> }
+    ] } }</div>
+  </div>
+  <h2>Lifecycle</h2>
+  <figure class="sketch"><svg id="d-mcplife"></svg></figure>
+  <script>
+  sketch("d-mcplife", 680, 280, (d) => {
+    d.sequence({
+      left: 70, right: 610,
+      actors: [{ id: "c", label: "MCP client", fill: "blue" }, { id: "s", label: "MCP server", fill: "yellow" }],
+      steps: [
+        { from: "c", to: "s", label: "initialize {protocolVersion, capabilities}" },
+        { from: "s", to: "c", label: "{capabilities: tools, resources, …}", reply: true },
+        { from: "c", to: "s", label: "notifications/initialized" },
+        { from: "c", to: "s", label: "tools/list" },
+        { from: "s", to: "c", label: "[{name: generate_sql, inputSchema: {…}}]", reply: true },
+        { from: "c", to: "s", label: "tools/call generate_sql {question, dialect}" },
+        { from: "s", to: "c", label: "{content: [{type: text, text: SELECT …}]}", reply: true, color: "green" },
+      ],
+    })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Transport</th><th>How</th><th>Use when</th></tr>
+    <tr><td><b>stdio</b></td><td>host starts the server as a subprocess; messages over stdin/stdout</td><td>local tools on the same machine (Claude Desktop config)</td></tr>
+    <tr><td><b>Streamable HTTP</b></td><td>HTTP POST per message, optional SSE streaming back; OAuth for auth</td><td>remote / multi-user servers (our SaaS)</td></tr>
+  </table>
+  <div class="cols">
+    <div class="tip small"><b>Our plan (phase 7):</b> a FastMCP server exposing <code>search_schema</code>, <code>generate_sql</code>, <code>validate_sql</code>, <code>explain_sql</code>, all calling the same <code>services/</code> layer the REST API uses. That's the payoff of chapter 2's layering.</div>
+    <div class="warn small"><b>Tool output is untrusted.</b> Text returned by a server can contain prompt-injection (“ignore your instructions…”). Least privilege, per-user auth, and treat results as data.</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ CH 12 ============================ -->
+<section class="page" data-toc="12 · Guardrails, shipping & scale" data-toc-level="chapter" data-status="planned">
+  <div class="page-head"><span>12 · Guardrails, shipping &amp; scale</span><span class="stamp next">COMING · phases 8–9</span></div>
+  <h1 class="chapter"><span class="no">12</span>Guardrails &amp; scale</h1>
+  <h2>Defense in depth</h2>
+  <figure class="sketch"><svg id="d-defense"></svg></figure>
+  <script>
+  sketch("d-defense", 680, 300, (d) => {
+    const layers = [
+      ["monitoring: logs · traces · alerts", "gray", true],
+      ["input guard: size limits ✓ · prompt-injection classifier", "pink"],
+      ["policy: auth ✓ · rate limits · quotas", "orange"],
+      ["process: schema-only context · read-only SQL policy", "yellow"],
+    ]
+    layers.forEach(([t, fill, dashed], i) => {
+      const inset = i * 26
+      d.box(4 + inset, 4 + inset, 672 - 2 * inset, 292 - 2 * inset, null, { fill, dashed, hachureGap: 8 })
+      d.text(16 + inset, 18 + inset, t, { anchor: "start", size: 15 })
+    })
+    d.box(125, 118, 430, 50, "output: validate SQL · never echo secrets", { fill: "green", size: 16, fillStyle: "solid" })
+    d.text(340, 192, "the LLM + agents work inside all of these layers", { size: 15, color: "ink" })
+  })
+  </script>
+  <ul class="arrows small">
+    <li><b>Prompt injection</b>: text that tries to override instructions. It can arrive in the question <i>or in retrieved content</i> (a malicious schema comment!) → treat retrieved text as data. Groq hosts <b>Llama Prompt Guard 2</b> classifiers for this.</li>
+    <li><b>Read-only policy</b>: parse generated SQL with sqlglot and block <code>DROP / DELETE / UPDATE / ALTER</code> unless a human approves (chapter 10).</li>
+  </ul>
+  <div class="cols">
+    <figure class="sketch"><svg id="d-bucket"></svg></figure>
+    <div class="small">
+      <p><b>Rate limiting</b> (token bucket): each user's bucket holds N tokens and refills at <i>r</i>/second; each request takes one; empty → <b>429 Too Many Requests</b>. Protects us <i>and</i> our Groq free-tier quota. Plans get different buckets.</p>
+      <p><b>Caching</b>: <i>exact</i> cache (same prompt hash → stored answer) and <i>semantic</i> cache (a new question whose embedding is ~0.95 similar to a past one reuses the answer). <span class="red">Key it by workspace + schema version</span> or users see stale or foreign answers.</p>
+    </div>
+  </div>
+  <script>
+  sketch("d-bucket", 330, 210, (d) => {
+    d.box(115, 5, 100, 30, "refill r / sec", { fill: "blue", size: 14 })
+    d.arrow([165, 35], [165, 62])
+    d.box(95, 62, 140, 100, null, { fill: "gray", hachureGap: 8 })
+    ;[[125, 120], [155, 135], [185, 118], [140, 145], [200, 142]].forEach(([x, y]) => d.circle(x, y, 18, { fill: "yellow", fillStyle: "solid" }))
+    d.arrow([235, 140], [300, 140], { label: "1 token\nper request", labelOffset: [4, -20], size: 13 })
+    d.text(165, 182, "bucket empty → 429", { size: 15, color: "red" })
+    d.text(45, 112, "N = burst\nsize", { size: 13.5, color: "gray" })
+  })
+  </script>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Docker, CI/CD, scaling & observability">
+  <div class="page-head"><span>12 · Guardrails, shipping &amp; scale</span><span class="stamp next">COMING · phases 8–9</span></div>
+  <h2>Docker in one minute</h2>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>Image</b> = recipe + ingredients, frozen (read-only layers: OS, Python, deps, our code).</li>
+      <li><b>Container</b> = a running instance of an image (the cake). Many containers from one image.</li>
+      <li><b>Multi-stage build</b>: a big “build” stage installs everything; a slim “runtime” stage copies only what's needed → small, safer images.</li>
+      <li><b>Compose</b>: one YAML file describes all services; <code>docker compose up</code> starts the whole system. (Phase 0 already uses it for Postgres + Qdrant.)</li>
+    </ul>
+    <figure class="sketch"><svg id="d-compose"></svg></figure>
+  </div>
+  <script>
+  sketch("d-compose", 330, 250, (d) => {
+    const web = d.box(4, 8, 140, 46, "nginx + React", { fill: "blue", size: 14.5 })
+    const api = d.box(4, 92, 140, 46, "api × N", { fill: "green", size: 16 })
+    const wk = d.box(4, 180, 140, 46, "worker × M", { fill: "orange", size: 15 })
+    const pg = d.box(205, 4, 120, 64, "Postgres", { shape: "db", fill: "blue", size: 14.5 })
+    const qd = d.box(205, 90, 120, 64, "Qdrant", { shape: "db", fill: "orange", size: 14.5 })
+    const rd = d.box(205, 176, 120, 64, "Redis", { shape: "db", fill: "pink", size: 14.5 })
+    d.arrow(web.bottom, api.top)
+    d.arrow([144, 105], [205, 40])
+    d.arrow([144, 115], [205, 122])
+    d.arrow([144, 125], [205, 200])
+    d.arrow([205, 215], [144, 205])
+    d.arrow([144, 190], [205, 135])
+  })
+  </script>
+  <h2>CI/CD pipeline</h2>
+  <figure class="sketch"><svg id="d-cicd"></svg></figure>
+  <script>
+  sketch("d-cicd", 680, 82, (d) => {
+    const steps = [["git push", "gray"], ["lint", "blue", "ruff · eslint"], ["test", "blue", "pytest"], ["eval", "purple", "golden set"], ["build", "orange", "images"], ["deploy", "green", "cloud"]]
+    steps.forEach(([t, fill, sub], i) => {
+      d.box(4 + i * 113, 12, 98, 58, t, { fill, size: 16, sub })
+      if (i) d.arrow([4 + i * 113 - 15, 41], [4 + i * 113, 41])
+    })
+  })
+  </script>
+  <h2>Scaling &amp; observability</h2>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>Stateless API</b>: JWT auth, no in-memory sessions → run N replicas behind a load balancer.</li>
+      <li><b>State lives in services</b>: Postgres, Qdrant, Redis (each scales on its own).</li>
+      <li><b>Slow work → queue + workers</b> (ingestion, evals), scaled separately from the API.</li>
+      <li><b>LLM limits</b>: queue + backoff + cache + model tiers (fast model for cheap steps).</li>
+    </ul>
+    <div class="small">
+      <table class="hand compact">
+        <tr><th>Signal</th><th>Answers</th></tr>
+        <tr><td><b>logs</b></td><td>what happened?</td></tr>
+        <tr><td><b>metrics</b></td><td>how many, how fast? (p95 latency, tokens, cost)</td></tr>
+        <tr><td><b>traces</b></td><td>which path did <i>this</i> request take through agents and tools?</td></tr>
+      </table>
+      <p>LLM-specific tracing (prompts, tokens, each agent step): <b>Langfuse</b> (self-hostable) or LangSmith.</p>
+    </div>
+  </div>
+  <div class="tip small">Already built: <code>/api/v1/health/live</code> (is the process up? → orchestrator restarts it if not) and <code>/api/v1/health/ready</code> (can it reach the DB? → load balancer stops sending traffic if not).</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ GLOSSARY ============================ -->
+<section class="page" data-toc="Glossary A–L" data-toc-level="chapter" data-status="overview">
+  <div class="page-head"><span>glossary</span><span>quick definitions</span></div>
+  <h1 class="chapter">Glossary · A–L</h1>
+  <div class="glossary">
+    <p><b>Agent</b>: LLM + tools + state + loop; decides its next step itself.</p>
+    <p><b>Alembic</b>: migration tool for SQLAlchemy; versioned schema changes.</p>
+    <p><b>ANN</b>: approximate nearest neighbour search; trades a little accuracy for big speed.</p>
+    <p><b>ASGI</b>: async interface between Python web servers (Uvicorn) and apps (FastAPI).</p>
+    <p><b>async / await</b>: cooperative concurrency; <code>await</code> yields while waiting on I/O.</p>
+    <p><b>bcrypt</b>: slow, salted password hash with a tunable cost factor.</p>
+    <p><b>Bi-encoder</b>: embeds query and document separately; fast retrieval.</p>
+    <p><b>BM25</b>: classic keyword ranking function (term frequency, IDF, length normalisation).</p>
+    <p><b>Checkpointer</b>: LangGraph component that saves graph state after each step.</p>
+    <p><b>Chunk</b>: one retrievable unit of knowledge (for us: a table card).</p>
+    <p><b>Conditional edge</b>: graph edge whose target is chosen by a function at runtime.</p>
+    <p><b>Context window</b>: max tokens a model can attend to in one call (input + output).</p>
+    <p><b>CORS</b>: browser rule; servers must allow other origins to read their responses.</p>
+    <p><b>Cosine similarity</b>: angle-based similarity of two vectors, −1 … 1.</p>
+    <p><b>Cross-encoder</b>: reads query + document together to score relevance; used for reranking.</p>
+    <p><b>Dependency injection</b>: a function declares needs; the framework provides them.</p>
+    <p><b>Embedding</b>: vector of numbers representing meaning; similar meaning → close vectors.</p>
+    <p><b>Event loop</b>: single thread that runs async tasks, switching at <code>await</code> points.</p>
+    <p><b>Execution accuracy (EX)</b>: predicted SQL returns the same rows as the gold SQL.</p>
+    <p><b>Faithfulness</b>: answer is fully supported by the retrieved context.</p>
+    <p><b>FastMCP</b>: Python framework for building MCP servers with decorators.</p>
+    <p><b>Fine-tuning</b>: further training a model's weights on your examples.</p>
+    <p><b>Golden dataset</b>: hand-checked questions with known correct answers for evaluation.</p>
+    <p><b>Groq</b>: inference provider running open LLMs on custom LPU hardware.</p>
+    <p><b>Guardrail</b>: check that blocks or fixes unsafe inputs/outputs around an LLM.</p>
+    <p><b>Hallucination</b>: fluent but false model output.</p>
+    <p><b>HITL</b>: human-in-the-loop; the graph pauses for a human decision, then resumes.</p>
+    <p><b>HNSW</b>: layered proximity graph used for fast ANN vector search.</p>
+    <p><b>Hybrid search</b>: keyword (BM25) + semantic (dense) search, fused (e.g. RRF).</p>
+    <p><b>HyDE</b>: embed a hypothetical answer instead of the question to improve retrieval.</p>
+    <p><b>IDOR</b>: insecure direct object reference; accessing others' data by changing an id.</p>
+    <p><b>Idempotent</b>: repeating a request has the same effect as doing it once (PUT, DELETE).</p>
+    <p><b>JSON-RPC</b>: lightweight request/response protocol; the wire format of MCP.</p>
+    <p><b>JWT</b>: signed token (header.payload.signature) carrying claims like user id + expiry.</p>
+    <p><b>LangChain</b>: framework of composable LLM components (prompts, models, parsers, tools).</p>
+    <p><b>LangGraph</b>: library for stateful agent workflows as graphs, with memory and HITL.</p>
+    <p><b>LCEL</b>: LangChain Expression Language; <code>a | b | c</code> composes Runnables.</p>
+    <p><b>LLM-as-judge</b>: using a strong model with a rubric to grade outputs.</p>
+    <p><b>LPU</b>: Groq's Language Processing Unit chip, built for fast inference.</p>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Glossary M–Z">
+  <div class="page-head"><span>glossary</span><span>quick definitions</span></div>
+  <h1 class="chapter">Glossary · M–Z</h1>
+  <div class="glossary">
+    <p><b>MCP</b>: Model Context Protocol; open standard connecting AI hosts to tool/data servers.</p>
+    <p><b>Middleware</b>: code wrapping every request/response (CORS, logging, rate limits).</p>
+    <p><b>Migration</b>: versioned script that changes the database schema (up and down).</p>
+    <p><b>MoE</b>: mixture-of-experts; a router activates only a few expert sub-networks per token.</p>
+    <p><b>MRR</b>: mean reciprocal rank; average of 1 / rank of the first relevant result.</p>
+    <p><b>nDCG</b>: ranking quality metric that rewards relevant items placed higher.</p>
+    <p><b>ORM</b>: object-relational mapper; Python classes ⇄ database tables.</p>
+    <p><b>Payload</b>: JSON metadata stored with a vector in Qdrant; used for filtering.</p>
+    <p><b>Precision@k</b>: share of the top-k results that are relevant.</p>
+    <p><b>Preflight</b>: browser's OPTIONS request asking the server if a cross-origin call is allowed.</p>
+    <p><b>Prompt injection</b>: input that tries to override the model's instructions.</p>
+    <p><b>Prompt template</b>: reusable prompt with placeholders filled at runtime.</p>
+    <p><b>Pydantic</b>: data validation via Python type hints; powers FastAPI request/response models.</p>
+    <p><b>Qdrant</b>: open-source vector database (dense + sparse vectors, payload filters).</p>
+    <p><b>RAG</b>: retrieval-augmented generation; retrieve context, then generate with it.</p>
+    <p><b>Rate limiting</b>: capping requests per user/time window (e.g. token bucket) → 429.</p>
+    <p><b>ReAct</b>: agent pattern alternating Thought → Action → Observation.</p>
+    <p><b>Recall@k</b>: share of all relevant items that appear in the top-k.</p>
+    <p><b>Reducer</b>: rule for merging a node's update into LangGraph state.</p>
+    <p><b>Reflection</b>: a critic's feedback is fed back so the generator can fix its output.</p>
+    <p><b>Refresh token</b>: long-lived token used only to obtain new access tokens.</p>
+    <p><b>Reranker</b>: model that re-scores retrieved candidates more precisely (cross-encoder).</p>
+    <p><b>RRF</b>: reciprocal rank fusion; merge rankings with Σ 1/(k + rank).</p>
+    <p><b>Runnable</b>: LangChain interface with invoke / ainvoke / stream / batch.</p>
+    <p><b>Salt</b>: random per-password value mixed into a hash to defeat precomputed tables.</p>
+    <p><b>Semantic cache</b>: reuse answers for questions whose embeddings are near-identical.</p>
+    <p><b>Session (DB)</b>: SQLAlchemy unit of work; tracks objects and commits transactions.</p>
+    <p><b>sqlglot</b>: SQL parser/transpiler for 20+ dialects; produces an AST.</p>
+    <p><b>Sparse vector</b>: mostly-zero vector of keyword weights (BM25-style) for lexical search.</p>
+    <p><b>State (LangGraph)</b>: typed dict shared by all graph nodes.</p>
+    <p><b>Stateless API</b>: server keeps no per-user memory between requests; easy to replicate.</p>
+    <p><b>Streamable HTTP</b>: MCP's remote transport (HTTP POST + optional SSE stream).</p>
+    <p><b>Temperature</b>: sampling knob; low = focused/deterministic, high = random/creative.</p>
+    <p><b>Token</b>: unit of text an LLM reads and writes (≈ 4 English characters).</p>
+    <p><b>Tool calling</b>: model outputs a structured function call that the app executes.</p>
+    <p><b>Transaction</b>: group of DB writes that succeed or fail together (ACID).</p>
+    <p><b>UUID</b>: 128-bit random identifier; non-guessable primary keys.</p>
+    <p><b>Uvicorn</b>: ASGI web server that runs our FastAPI app.</p>
+    <p><b>Vector database</b>: database optimised for storing and searching embeddings.</p>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<!-- ============================ PHASE JOURNAL ============================ -->
+<section class="page" data-toc="Phase journal · 0: Foundation" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>phase journal</span><span class="stamp built">DONE ✓ 2026-10-07</span></div>
+  <h1 class="chapter"><span class="no">0</span>Phase 0 · Foundation</h1>
+  <div class="cols">
+    <div>
+      <h3>What we built</h3>
+      <ul class="arrows small">
+        <li>Backend rebuilt in layers: <code>core/ db/ models/ schemas/ services/ llm/ api/</code></li>
+        <li>MongoDB → <b>PostgreSQL</b> (SQLAlchemy 2 async + asyncpg) with <b>Alembic</b> migrations</li>
+        <li><b>bcrypt</b> passwords, <b>JWT access + refresh</b>, protected routes, <code>/users/me</code></li>
+        <li><b>LangChain</b> LCEL chains on Groq <b>gpt-oss</b>, per-mode prompts, model tiers in config</li>
+        <li>History saved server-side, paginated, owner-scoped</li>
+        <li>One error envelope + real status codes · health checks</li>
+        <li>Frontend: <code>lib/api.js</code> client, auto token refresh, <code>ProtectedRoute</code></li>
+        <li>uv + pyproject, docker-compose (Postgres + Qdrant), this notebook</li>
+      </ul>
+      <h3>How we verified it</h3>
+      <ul class="arrows small">
+        <li>23 pytest tests (SQLite in memory + fake LLM)</li>
+        <li>live Groq call through the real chain (~1.1 s)</li>
+        <li>migration up / down / drift check</li>
+        <li>browser E2E: signup → generate → history → silent token refresh</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bugs fixed</h3>
+      <table class="hand compact tiny">
+        <tr><th>Bug</th><th>Lesson</th></tr>
+        <tr><td>deprecated Groq model → every AI call failed</td><td>model names in config</td></tr>
+        <tr><td>history never saved (un-awaited async calls)</td><td>async needs <code>await</code></td></tr>
+        <tr><td>plain-text passwords</td><td>hash with bcrypt</td></tr>
+        <tr><td>no auth on any route; IDOR on /user-data</td><td>identity from token only</td></tr>
+        <tr><td>errors returned as HTTP 200</td><td>status codes matter</td></tr>
+        <tr><td>sync LLM client blocked the event loop</td><td>use <code>ainvoke</code></td></tr>
+        <tr><td>login stored “undefined” token, still navigated</td><td>check <code>response.ok</code></td></tr>
+        <tr><td>signup expected 200; no confirm field</td><td>201 Created</td></tr>
+        <tr><td><code>toString(Date.now())</code> ids</td><td>global vs method</td></tr>
+        <tr><td>profile fetch wiped plan/bio fields</td><td>merge, don't replace</td></tr>
+        <tr><td>“explain” forced SQL-only prompt</td><td>one prompt per task</td></tr>
+        <tr><td>13-char JWT secret</td><td>≥ 256-bit secrets</td></tr>
+        <tr><td>empty requirements.txt, 2 package.json</td><td>reproducible installs</td></tr>
+        <tr><td>hard-coded localhost URLs</td><td>config via env vars</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="sticky pink"><b>My takeaways:</b> fix the foundation before adding AI · every boundary (HTTP, DB, LLM) needs explicit error handling ·
+  test with fakes, verify with the real thing · <span class="hl">the LLM never saw the schema</span>, which is exactly why phases 2–4 (RAG) exist.</div>
+  <div class="sticky blue" style="transform:rotate(0.6deg)"><b>Next → Phase 1 (LLM layer):</b> structured JSON outputs, streaming tokens to the UI, token counting &amp; cost tracking, prompt versioning, first LangSmith/Langfuse traces.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<script>
+  // Table of contents, generated from data-toc attributes (page number = position in the document).
+  ;(function buildToc() {
+    const pages = [...document.querySelectorAll(".page")]
+    const toc = document.getElementById("toc")
+    const marks = { built: " ✓", next: " →", planned: "", overview: "" }
+    pages.forEach((page, i) => {
+      const title = page.dataset.toc
+      if (!title) return
+      const level = page.dataset.tocLevel === "chapter" ? "chapter" : "sub"
+      const row = document.createElement("div")
+      row.className = "toc-row " + level
+      row.innerHTML = '<span class="t"></span><span class="dots"></span><span class="pg"></span>'
+      row.querySelector(".t").textContent = title + (level === "chapter" ? marks[page.dataset.status] ?? "" : "")
+      row.querySelector(".pg").textContent = i + 1
+      toc.appendChild(row)
+    })
+    // Page numbers in footers: set by script so single-page previews stay correct.
+    pages.forEach((page, i) => {
+      const num = page.querySelector(".page-foot .num")
+      if (num) num.textContent = `— ${i + 1} —`
+    })
+  })()
+
+  // ?only=N shows a single page (used by `build.mjs --png N` for page previews).
+  ;(function showOnly() {
+    const only = Number(new URLSearchParams(location.search).get("only"))
+    if (!only) return
+    document.querySelectorAll(".page").forEach((p, i) => {
+      if (i + 1 !== only) p.style.display = "none"
+      else p.style.margin = "0"
+    })
+    document.body.style.background = "none"
+  })()
+
+  // Overflow check used by `build.mjs --check` (runs after web fonts have loaded).
+  document.fonts.ready.then(() => {
+    const pages = [...document.querySelectorAll(".page")]
+    const over = pages.map((p, i) => (p.scrollHeight > p.clientHeight + 2 ? i + 1 : 0)).filter(Boolean)
+    document.body.dataset.overflow = over.join(",")
+    if (location.search.includes("check")) over.forEach((n) => pages[n - 1].classList.add("overflow"))
+  })
+</script>
+</body>
+</html>

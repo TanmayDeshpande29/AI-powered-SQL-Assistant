@@ -2,14 +2,18 @@ import React from "react"
 import { motion } from "framer-motion"
 import { useState } from "react"
 import { Database, Zap, Layers, Sparkles, Eye, EyeOff, Mail, Lock, ArrowLeft } from "lucide-react"
-import { BrowserRouter,Routes,Route,Link,useNavigate } from "react-router";
+import { Link, useNavigate, useLocation } from "react-router";
+import { api } from "./lib/api";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLogin, setIsLogin] = useState(true)
+  const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigateTo = useNavigate();
+  const location = useLocation();
 
   const features = [
     {
@@ -53,34 +57,18 @@ export default function LoginPage() {
     }
   }
 
-  const handleLoginClick = async () =>{
-     
- 
-      const url = "http://127.0.0.1:8000/login";
-       let response = await fetch(url,{
-            method:"post",
-            headers: {"Content-Type": "application/json"},
-            body:JSON.stringify({email,password})
-        })
-
-        response = await response.json()
-
-        if(response)
-        {
-          localStorage.setItem("access_token",response.access_token);
-          alert(response.message);
-          console.log(response.access_token);
-          // window.location.href= "/querybuilder";
-          navigateTo("/querybuilder");
-        }   
-        else{
-            alert(response.error);
-            window.location.href= "/login";
-            
-        } 
-        
-        
-       
+  const handleLoginClick = async () => {
+    setError("")
+    setIsSubmitting(true)
+    try {
+      await api.login(email, password) // stores access + refresh tokens
+      // Go back to the page the user originally asked for (set by ProtectedRoute).
+      navigateTo(location.state?.from ?? "/querybuilder", { replace: true })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -259,15 +247,22 @@ export default function LoginPage() {
               .
             </div>
 
+            {error && (
+              <p role="alert" className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 whitespace-pre-line">
+                {error}
+              </p>
+            )}
+
             {/* Submit Button */}
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               type="submit"
               onClick={handleLoginClick}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-blue-500/25"
+              disabled={isSubmitting}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-blue-500/25 disabled:opacity-60"
             >
-              {isLogin ? "Sign In" : "Sign Up — Write My First Query"}
+              {isSubmitting ? "Signing in..." : isLogin ? "Sign In" : "Sign Up — Write My First Query"}
             </motion.button>
 
             {/* Google Sign Up */}

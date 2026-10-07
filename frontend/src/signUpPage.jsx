@@ -3,9 +3,12 @@
 import { motion } from "framer-motion"
 import { useState } from "react"
 import { Database, Zap, Layers, Sparkles, Eye, EyeOff, Mail, Lock, User, ArrowLeft } from "lucide-react"
-import { BrowserRouter,Routes,Route,Link,useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { api } from "./lib/api";
 
 export default function SignupPage() {
+  const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -52,27 +55,21 @@ export default function SignupPage() {
     { number: "25,000+", label: "Hours Saved" },
   ]
 
-  const handleSignUpClick = async ()=>{
-    console.log("Form Data:", formData.name, formData.email, formData.password);
-    const url = "http://localhost:8000/signup"
-
-    let response = await fetch(url, {
-      method: "post",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(
-        {
-        name:formData.name,
-        email:formData.email,
-        password:formData.password
-        }
-      )
-    })
-
-    if (response.status === 200) {
-    
-      alert("Signup successful:")
-      navigateTo("/login")
-
+  const handleSignUpClick = async () => {
+    setError("")
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match.")
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      await api.signup(formData) // 201 Created; throws ApiError on 409/422
+      await api.login(formData.email, formData.password) // sign straight in, no second form
+      navigateTo("/querybuilder", { replace: true })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -256,7 +253,33 @@ export default function SignupPage() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
+              <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
+            </div>
+
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  placeholder="••••••••"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl pl-12 pr-12 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
 
             {/* Terms and Privacy */}
@@ -272,15 +295,22 @@ export default function SignupPage() {
               .
             </div>
 
+            {error && (
+              <p role="alert" className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 whitespace-pre-line">
+                {error}
+              </p>
+            )}
+
             {/* Submit Button */}
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleSignUpClick}
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-blue-500/25"
+              disabled={isSubmitting}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-blue-500/25 disabled:opacity-60"
             >
-              Sign Up — Write My First Query
+              {isSubmitting ? "Creating your account..." : "Sign Up — Write My First Query"}
             </motion.button>
 
             {/* Google Sign Up */}

@@ -24,7 +24,8 @@ import {
   Plus,
   Check,
 } from "lucide-react"
-import { BrowserRouter,Routes,Route,Link,Outlet } from "react-router";
+import { Link } from "react-router";
+import { api } from "./lib/api";
 
 export default function QueryBuilderMainPage() {
   const [selectedTool, setSelectedTool] = useState("Generate SQL")
@@ -86,35 +87,19 @@ export default function QueryBuilderMainPage() {
 
   const handleGenerateSQL = async () => {
     setIsGenerating(true);
-  const url = "http://localhost:8000/generate-sql";
-  const payload = {
-    query: queryInput,
-    dialect: selectedDialect
-  };
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-
-    if (data.sql) {
-      //console.log("Generated SQL:", data.sql);
-      setGeneratedSQL(data.sql); // <-- This sets the query in your state
-    } else {
-      console.error("Groq API error:", data.error);
-      setGeneratedSQL("No SQL generated"); // Fallback
+    try {
+      const data = await api.generateSql({
+        question: queryInput,
+        dialect: selectedDialect,
+        saveHistory: rememberHistory,
+      })
+      setGeneratedSQL(data.output)
+    } catch (err) {
+      // ApiError carries the backend's message (validation, LLM down, network...)
+      setGeneratedSQL(`-- Error: ${err.message}`)
+    } finally {
+      setIsGenerating(false);
     }
-  } catch (err) {
-    console.error("Request failed:", err);
-    setGeneratedSQL("Error connecting to backend");
-  }
-  finally {
-    setIsGenerating(false);
-  }
 };
 
   const handleCopySQL = () => {

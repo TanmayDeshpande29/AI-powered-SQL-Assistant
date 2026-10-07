@@ -28,9 +28,15 @@ import {
   Crown,
   Zap,
 } from "lucide-react"
-import {Link} from "react-router"
-// import { SidebarItemList } from "./sideBarItems"
-import {GetUserId} from "../utils/decode_user_id.jsx";
+import { Link } from "react-router"
+import { api } from "./lib/api"
+
+const TOOL_LABELS = {
+  generate: "Generate SQL",
+  debug: "Debug SQL",
+  explain: "Explain SQL",
+  optimize: "Optimize SQL",
+}
 
 // Reusable Components
 const Card = ({ children, className = "" }) => (
@@ -148,26 +154,18 @@ export default function AccountPage() {
     plan: "Pro",
     aiUpdates: true,
   })
-  const user_id = GetUserId();
+  const [history, setHistory] = useState([])
 
-  useEffect(()=>{
-    if(user_id)
-    {
-      fetch(`http://localhost:8000/user-data/${user_id}`)
-      .then(res=>res.json())
-      .then(data=>{
-        if(data.error)
-        {
-          console.error("Error fetching user data:", data.error);
-        }
-        else{
-          setUserData(data)
-        }
-      })
-      .catch(err=>console.error("Failed to fetch user data:", err)); 
-    }
-
-  },[user_id]);
+  useEffect(() => {
+    // The user is identified by the token, so no user id is needed in the URL.
+    // Merge (not replace) so UI-only fields like plan/bio/avatar keep their values.
+    api.me()
+      .then((me) => setUserData((prev) => ({ ...prev, name: me.name, email: me.email })))
+      .catch((err) => console.error("Failed to load profile:", err.message))
+    api.listHistory({ limit: 10 })
+      .then((page) => setHistory(page.items))
+      .catch((err) => console.error("Failed to load history:", err.message))
+  }, [])
 
   // Password change state
   const [passwordData, setPasswordData] = useState({
@@ -195,43 +193,14 @@ export default function AccountPage() {
     
   }
 
-  const queryHistory = [
-    {
-      id: 1,
-      name: "Customer Analysis Query",
-      date: "2024-01-15",
-      size: "2.3 KB",
-      type: "Natural Language",
-    },
-    {
-      id: 2,
-      name: "Sales Report Optimization",
-      date: "2024-01-14",
-      size: "1.8 KB",
-      type: "Optimize SQL",
-    },
-    {
-      id: 3,
-      name: "User Registration Debug",
-      date: "2024-01-13",
-      size: "3.1 KB",
-      type: "Debug SQL",
-    },
-    {
-      id: 4,
-      name: "Product Inventory Query",
-      date: "2024-01-12",
-      size: "1.5 KB",
-      type: "Explain SQL",
-    },
-    {
-      id: 5,
-      name: "Monthly Revenue Analysis",
-      date: "2024-01-11",
-      size: "2.7 KB",
-      type: "Natural Language",
-    },
-  ]
+  // Shape the API rows (QueryHistoryRead) into what the history list renders.
+  const queryHistory = history.map((entry) => ({
+    id: entry.id,
+    name: entry.input_text.length > 60 ? `${entry.input_text.slice(0, 60)}…` : entry.input_text,
+    date: new Date(entry.created_at).toLocaleDateString(),
+    size: entry.dialect,
+    type: TOOL_LABELS[entry.tool] ?? entry.tool,
+  }))
 
   const deviceHistory = [
     {
@@ -276,9 +245,16 @@ export default function AccountPage() {
 
   const handleSaveProfile = async () => {
     setIsSaving(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setIsSaving(false)
-    setIsEditing(false)
+    try {
+      // Only the name is server-side for now; email changes need a verification flow.
+      const me = await api.updateMe({ name: userData.name })
+      setUserData((prev) => ({ ...prev, name: me.name, email: me.email }))
+      setIsEditing(false)
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handlePasswordChange = async () => {
@@ -286,15 +262,23 @@ export default function AccountPage() {
       alert("New passwords don't match!")
       return
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setPasswordData({ current: "", new: "", confirm: "" })
-    setShowPasswordModal(false)
+    try {
+      await api.changePassword(passwordData.current, passwordData.new)
+      setPasswordData({ current: "", new: "", confirm: "" })
+      setShowPasswordModal(false)
+      alert("Password updated.")
+    } catch (err) {
+      alert(err.message)
+    }
   }
 
   const handleDeleteAccount = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setShowDeleteModal(false)
-    // Redirect to home or login page
+    try {
+      await api.deleteAccount()
+      api.logout() // clears tokens and redirects to /login
+    } catch (err) {
+      alert(err.message)
+    }
   }
 
   return (

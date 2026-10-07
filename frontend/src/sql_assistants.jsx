@@ -26,8 +26,8 @@ import {
   VolumeX,
   RefreshCw,
 } from "lucide-react"
-import {Link} from "react-router"  ;
-import { GetUserId } from "../utils/decode_user_id";
+import { Link } from "react-router";
+import { api } from "./lib/api";
 
 export default function SQLAssistantsPage() {
   // const [activeMode, setActiveMode] = useState("natural-language")
@@ -106,75 +106,23 @@ export default function SQLAssistantsPage() {
     setInputs((prev) => ({ ...prev, [mode]: value }))
   }
 
-  const handleRun = async (mode) => 
-  { 
-  setIsProcessing(true);
-  const url = "http://localhost:8000/sql-assistants"
-  
-  try
-  {
-      let response = await fetch(url,{
-      method:"post",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(
-        {
-          mode:mode,
-          query: inputs[mode],
-          dialect: selectedDialect
-        }
-      )
-    })
-
-     response = await response.json();
-    if(response.output)
-    {
-      setOutputs((prev)=>({...prev, [mode]:response.output}));
-
-      const user_id = GetUserId();
-      const query = 
-      {
-        
-        id: toString(Date.now()),
-        name: mode === "debug-sql" ? "Debug SQL" :
-              mode === "explain-sql" ? "Explain SQL" :
-              "Optimize SQL",
-        size: `${inputs[mode].length / 1024} KB`,
-        date: String(new Date().toISOString().split("T")[0]),
-        type: mode.replace("-", " ")
-
-      }
-
-      let query_response = await fetch("http://localhost:8000/add-query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: String(user_id),
-          query: query
-        })
-      });
-
-      query_response = await query_response.json();
-      if(query_response.message){
-        alert(query_response.message)
-      }
-  }
-
-
-    else if(response.error)
-    {
-      setOutputs((prev)=>({...prev, [mode]:`Error: ${response.error}`}));
+  const handleRun = async (mode) => {
+    setIsProcessing(true);
+    try {
+      // UI modes are "debug-sql" / "explain-sql" / "optimize-sql"; the API expects "debug" etc.
+      // History is saved by the backend in the same request (no second call to fail).
+      const data = await api.assistSql({
+        mode: mode.replace("-sql", ""),
+        sql: inputs[mode],
+        dialect: selectedDialect,
+      })
+      setOutputs((prev) => ({ ...prev, [mode]: data.output }));
+    } catch (err) {
+      setOutputs((prev) => ({ ...prev, [mode]: `Error: ${err.message}` }));
+    } finally {
+      setIsProcessing(false);
     }
   }
-  catch (error) {
-    console.error("Error:", error);
-    setOutputs((prev) => ({
-      ...prev,
-      [mode]: "Error connecting to server"
-    }));
-  } finally {
-    setIsProcessing(false);
-  }
-}
 
 
   const handleVoiceInput = () => {

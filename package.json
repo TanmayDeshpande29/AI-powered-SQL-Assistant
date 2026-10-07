@@ -1,40 +1,16 @@
 {
-  "name": "frontend_folder",
+  "name": "sqlassist",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "0.1.0",
+  "description": "Workspace runner: starts the FastAPI backend and the Vite frontend together",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "start": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "cd backend && uvicorn app.main:app --reload ",
-    "client": " cd frontend && npm run dev ",
-    "stop": "pkill -f uvicorn && pkill -f vite"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.1.11",
-    "framer-motion": "^12.23.0",
-    "jwt-decode": "^4.0.0",
-    "lucide-react": "^0.525.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-router": "^7.6.3"
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "cd backend && uv run uvicorn app.main:app --reload --reload-include .env --port 8000",
+    "dev:web": "npm --prefix frontend run dev",
+    "test:api": "cd backend && uv run pytest -q",
+    "build:web": "npm --prefix frontend run build"
   },
   "devDependencies": {
-    "@eslint/js": "^9.25.0",
-    "@types/react": "^19.1.2",
-    "@types/react-dom": "^19.1.2",
-    "@vitejs/plugin-react": "^4.4.1",
-    "autoprefixer": "^10.4.21",
-    "concurrently": "^9.2.0",
-    "eslint": "^9.25.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.19",
-    "globals": "^16.0.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
-    "vite": "^6.3.5"
+    "concurrently": "^9.2.0"
   }
 }
