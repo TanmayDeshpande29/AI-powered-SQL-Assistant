@@ -18,8 +18,8 @@
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Foundation: Postgres, auth, LangChain LLM layer, bug fixes | ✅ done |
-| 1 | LLM layer: structured outputs, streaming, token/cost tracking, tracing | ⏭️ next |
-| 2 | Schema ingestion: SQL text / `.sql` files / screenshots → normalized schema | planned |
+| 1 | LLM layer: structured output, SQL validation, SSE streaming, tokens & cost, reasoning effort, retries & fallbacks, prompt versions, LangSmith tracing | ✅ done |
+| 2 | Schema ingestion: SQL text / `.sql` files / screenshots → normalized schema | ⏭️ next |
 | 3 | Embeddings + Qdrant: table cards, dense + sparse vectors, multi-tenancy | planned |
 | 4 | Retrieval: BM25, dense, hybrid (RRF), FK-graph expansion, reranking | planned |
 | 5 | RAG evaluation: golden set, retrieval metrics, execution accuracy, RAGAS, CI gate | planned |
@@ -29,7 +29,7 @@
 | 9 | Ship: Dockerfiles, CI/CD, deployment | planned |
 
 The full plan, with decisions and learning goals per phase, is in [docs/ROADMAP.md](docs/ROADMAP.md).
-A line-by-line explanation of the Phase 0 code is in [docs/phases/phase-0-foundation.md](docs/phases/phase-0-foundation.md).
+File-by-file explanations of each phase: [Phase 0: foundation](docs/phases/phase-0-foundation.md) · [Phase 1: LLM layer](docs/phases/phase-1-llm-layer.md).
 
 ---
 
@@ -80,14 +80,15 @@ flowchart TB
     classDef planned fill:#fff8e1,stroke:#c96a00,stroke-dasharray:5 5,color:#1b2740
 ```
 
-### Backend layers (Phase 0)
+### Backend layers
 
 ```mermaid
 flowchart LR
-    R["api/v1/routes<br/>HTTP in/out, status codes"] --> S["services<br/>business rules"]
+    R["api/v1/routes<br/>HTTP in/out, status codes, SSE"] --> S["services<br/>business rules"]
     S --> M["models + db<br/>ORM tables, sessions"]
-    S --> L["llm<br/>prompts, model factory, parsers"]
-    R -.-> C["core<br/>config · security · exceptions · logging"]
+    S --> L["llm<br/>model factory · retry/fallback<br/>prompts · output schemas · usage"]
+    S --> T["sql_tools<br/>sqlglot validation"]
+    R -.-> C["core<br/>config · security · exceptions<br/>logging · tracing"]
     S -.-> C
     M -.-> C
 ```
@@ -107,18 +108,43 @@ sequenceDiagram
     participant LLM as Groq · gpt-oss-120b
     participant DB as PostgreSQL
 
-    U->>FE: question + dialect, clicks Generate
-    FE->>API: POST {question, dialect, save_history} + Bearer access token
+    U->>FE: question + dialect + "thinking" level, clicks Generate
+    FE->>API: POST {question, dialect, reasoning_effort, save_history} + Bearer token
     API->>API: Pydantic validates body (422 if invalid)
     API->>DEP: verify JWT signature, expiry, type=access
     DEP->>DB: SELECT user by id
-    API->>SVC: generate_sql(llm, question, dialect)
-    SVC->>LLM: prompt | ChatGroq | StrOutputParser (ainvoke)
-    LLM-->>SVC: text (sometimes wrapped in markdown fences)
-    SVC-->>API: LLMResult(clean SQL, model, latency_ms)
-    API->>DB: INSERT query_history (if save_history)
-    API-->>FE: 200 {output, model, latency_ms, history_id}
-    FE-->>U: renders SQL
+    API->>DB: COMMIT (release the connection before the slow LLM call)
+    API->>SVC: generate_sql(provider, question, dialect, effort)
+    SVC->>LLM: prompt | ChatGroq.with_structured_output(SQLAnswer, json_schema, strict)
+    Note over SVC,LLM: network error / 5xx → retry with backoff<br/>429 rate limit → fall back to gpt-oss-20b
+    LLM-->>SVC: JSON matching SQLAnswer + token usage
+    SVC->>SVC: sqlglot validates the SQL · cost = tokens × list price
+    SVC-->>API: LLMResult(sql, explanation, assumptions, tables_used, validation, usage, cost)
+    API->>DB: INSERT query_history (tokens, cost, prompt version, details)
+    API-->>FE: 200 LLMResponse
+    FE-->>U: SQL + validity badge + assumptions + model · time · tokens · cost
+```
+
+### Streaming an explanation (Server-Sent Events)
+
+```mermaid
+sequenceDiagram
+    participant FE as React (fetch + ReadableStream)
+    participant API as FastAPI /sql/explain/stream
+    participant LLM as Groq · gpt-oss-20b
+
+    FE->>API: POST {sql, dialect} + Bearer token
+    API->>API: auth + validation first (401/422 are normal JSON errors)
+    API-->>FE: 200 Content-Type: text/event-stream
+    API->>LLM: chain.astream() at low reasoning effort
+    loop every chunk
+        LLM-->>API: tokens
+        API-->>FE: event: token / data: {"text": "..."}
+        FE->>FE: append text to the output panel
+    end
+    API->>API: save history (tokens, cost)
+    API-->>FE: event: done / data: LLMResponse
+    Note over FE,API: failures after the 200 → event: error<br/>idle stream → ": ping" keep-alive every 15 s
 ```
 
 ### Authentication: access + refresh tokens
@@ -170,11 +196,33 @@ erDiagram
         varchar dialect
         text input_text
         text output_text
-        varchar model
+        varchar model "the model that actually answered"
         int latency_ms
         timestamptz created_at
+        varchar prompt_version "e.g. generate_sql@v2"
+        varchar reasoning_effort "low | medium | high"
+        int input_tokens
+        int output_tokens "includes reasoning"
+        int reasoning_tokens
+        numeric cost_usd "12,8 exact decimal"
+        jsonb details "explanation, assumptions, tables, validation"
     }
 ```
+
+### LLM resilience policy
+
+```mermaid
+flowchart LR
+    REQ["LLM call"] --> P["primary tier<br/>(gpt-oss-120b)"]
+    P -->|ok| OK["answer"]
+    P -->|"network error / 5xx"| RT["retry same model<br/>exp. backoff + jitter<br/>max 2 retries"]
+    RT --> P
+    P -->|"429 rate limit"| F["fallback tier<br/>(gpt-oss-20b)"]
+    F -->|ok| OK2["answer<br/>fallback_used = true"]
+    F -->|"429 again"| E["HTTP 429 + Retry-After"]
+```
+
+The Groq SDK's own retries are switched off (`max_retries=0`). By default it would sleep for the server's `Retry-After`, up to 60 s on every attempt, before our fallback could react.
 
 ### Coming next: the RAG pipeline (Phases 2–4)
 
@@ -283,6 +331,15 @@ On startup the API logs `Database ready: postgresql+asyncpg://…` or explains w
 
 Interactive API docs: <http://localhost:8000/docs>
 
+### Optional: LangSmith tracing
+
+To inspect every LLM call (prompt, answer, tokens, latency, retries and fallbacks):
+1. Create a free account at <https://smith.langchain.com>.
+2. Go to **Settings → API Keys** and create a key.
+3. In `backend/.env`, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY=<your key>`.
+
+The dev server restarts by itself and logs `LangSmith tracing is on: project 'sqlassist-dev'`. Each run is tagged with its prompt version and reasoning effort, and carries the user id as metadata. While tracing is on, prompts and answers are stored in LangSmith's cloud.
+
 ### Troubleshooting the database connection
 
 | Message (server log or API error) | Cause | Fix |
@@ -311,7 +368,7 @@ uv run pytest
 uv run ruff check app tests
 ```
 
-Tests use in-memory SQLite and a fake LLM, so they need no database, network or API key.
+Tests use in-memory SQLite and a fake LLM provider (which can simulate structured answers, streaming, rate limits and outages), so they need no database, network or API key.
 
 ---
 
@@ -325,12 +382,19 @@ Tests use in-memory SQLite and a fake LLM, so they need no database, network or 
 | POST | `/api/v1/auth/refresh` | refresh token | new token pair |
 | GET / PATCH / DELETE | `/api/v1/users/me` | ✓ | read / rename / delete own account |
 | POST | `/api/v1/users/me/password` | ✓ | change password |
-| POST | `/api/v1/sql/generate` | ✓ | natural language → SQL |
-| POST | `/api/v1/sql/assist` | ✓ | `mode`: `debug` · `explain` · `optimize` |
-| GET | `/api/v1/history?limit&offset` | ✓ | own history, newest first |
+| POST | `/api/v1/sql/generate` | ✓ | natural language → validated SQL (structured output) |
+| POST | `/api/v1/sql/assist` | ✓ | `mode`: `debug` · `optimize` (structured) · `explain` (text) |
+| POST | `/api/v1/sql/explain/stream` | ✓ | explanation streamed as Server-Sent Events: `token`… then `done` or `error` |
+| GET | `/api/v1/history?limit&offset` | ✓ | own history, newest first, with tokens, cost and details |
 | DELETE | `/api/v1/history/{id}` | ✓ | delete own entry (`404` if not yours) |
 
-Every error uses one envelope with a matching HTTP status:
+All three SQL endpoints accept an optional `reasoning_effort` (`low` · `medium` · `high`). Every answer (`LLMResponse`) contains:
+- `output`, `explanation`, `assumptions`, `tables_used`;
+- `validation` (`valid`, `dialect`, `statement_types`, `errors`);
+- `model`, `prompt_version`, `reasoning_effort`, `latency_ms`;
+- `usage` (input, output, reasoning and cached tokens), `cost_usd`, `fallback_used`, `history_id`.
+
+Every error uses one envelope with a matching HTTP status. A `429 rate_limited` also carries a `Retry-After` header.
 
 ```json
 { "error": { "code": "validation_error", "message": "Request validation failed.", "details": [ { "field": "password", "message": "..." } ] } }
@@ -343,21 +407,24 @@ Every error uses one envelope with a matching HTTP status:
 ```
 backend/
   app/
-    main.py               app factory: CORS, error handlers, routers, lifespan
-    core/                 config (pydantic-settings), security (bcrypt, JWT), exceptions, logging
-    db/                   declarative Base + mixins, async engine/session
+    main.py               app factory: CORS, error handlers, routers, lifespan (tracing, DB check)
+    core/                 config (pydantic-settings), security (bcrypt, JWT), exceptions, logging,
+                          tracing (LangSmith)
+    db/                   declarative Base + mixins, async engine/session, release_connection
     models/               User, QueryHistory (SQLAlchemy 2 typed ORM)
-    schemas/              Pydantic request/response models
-    services/             auth, sql (LangChain chains), history: business logic
-    llm/                  ChatGroq factory, prompt templates, output parsers
-    api/deps.py           shared dependencies: DbSession, CurrentUser, PrimaryLLM
-    api/v1/routes/        auth, users, sql, history, health
-  alembic/                migrations (env.py reads DATABASE_URL from settings)
-  tests/                  pytest: SQLite in-memory + FakeListChatModel
+    schemas/              Pydantic request/response models (API contracts)
+    services/             auth, sql (structured + streamed LLM calls), history
+    llm/                  client (ChatGroq tiers, retry/fallback), prompts (versioned),
+                          output_schemas (what the LLM must return), usage (tokens, cost), parsers
+    sql_tools/            sqlglot-based SQL validation (Phase 2 adds DDL extraction)
+    api/deps.py           shared dependencies: DbSession, CurrentUser, LLM (provider)
+    api/v1/routes/        auth, users, sql (incl. SSE stream), history, health
+  alembic/                migrations (env.py uses the app's DB settings)
+  tests/                  pytest: SQLite in-memory + fake LLM provider (no network)
   pyproject.toml, uv.lock, requirements.txt (exported for pip users)
 frontend/
-  src/lib/api.js          the only module that talks to the backend (tokens, refresh, errors)
-  src/components/ProtectedRoute.jsx
+  src/lib/api.js          the only module that talks to the backend (tokens, refresh, errors, SSE)
+  src/components/         ProtectedRoute, ReasoningEffortSelect, LLMResultDetails
   src/*.jsx               pages
 docs/
   ROADMAP.md              phases, decisions, learning goals

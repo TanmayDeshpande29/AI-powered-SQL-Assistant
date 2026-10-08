@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models import QueryHistory
+from app.services.sql import LLMResult
 
 
 async def record(
@@ -14,18 +15,31 @@ async def record(
     tool: str,
     dialect: str,
     input_text: str,
-    output_text: str,
-    model: str,
-    latency_ms: int,
+    result: LLMResult,
 ) -> QueryHistory:
+    usage = result.usage
+    details = {
+        "explanation": result.explanation,
+        "assumptions": result.assumptions,
+        "tables_used": result.tables_used,
+        "validation": result.validation.model_dump() if result.validation else None,
+        "fallback_used": result.fallback_used,
+    }
     entry = QueryHistory(
         user_id=user_id,
         tool=tool,
         dialect=dialect,
         input_text=input_text,
-        output_text=output_text,
-        model=model,
-        latency_ms=latency_ms,
+        output_text=result.output,
+        model=result.model,
+        latency_ms=result.latency_ms,
+        prompt_version=result.prompt_version,
+        reasoning_effort=result.reasoning_effort,
+        input_tokens=usage.input_tokens if usage else None,
+        output_tokens=usage.output_tokens if usage else None,
+        reasoning_tokens=usage.reasoning_tokens if usage else None,
+        cost_usd=result.cost_usd,
+        details=details,
     )
     db.add(entry)
     await db.commit()

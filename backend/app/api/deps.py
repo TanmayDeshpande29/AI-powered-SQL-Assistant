@@ -10,13 +10,12 @@ from typing import Annotated
 import jwt
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from langchain_core.language_models import BaseChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthenticationError
 from app.core.security import decode_token
 from app.db.session import get_db
-from app.llm.client import get_primary_llm
+from app.llm.client import LLMProvider, get_llm_provider
 from app.models import User
 
 # auto_error=False: we raise our own 401 in the standard error envelope instead of
@@ -24,7 +23,7 @@ from app.models import User
 bearer_scheme = HTTPBearer(auto_error=False)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
-PrimaryLLM = Annotated[BaseChatModel, Depends(get_primary_llm)]
+LLM = Annotated[LLMProvider, Depends(get_llm_provider)]
 
 
 async def get_current_user(

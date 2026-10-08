@@ -472,12 +472,12 @@ table.hand.compact td {
 .glossary {
   columns: 2;
   column-gap: 7mm;
-  font-size: 14.2px;
-  line-height: 1.3;
+  font-size: 13.5px;
+  line-height: 1.26;
 }
 .glossary p {
   break-inside: avoid;
-  margin: 0 0 1.4mm;
+  margin: 0 0 1mm;
 }
 .glossary b {
   color: var(--blue);

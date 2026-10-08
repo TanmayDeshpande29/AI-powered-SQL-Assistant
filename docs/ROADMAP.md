@@ -20,6 +20,12 @@ Every phase follows the same loop:
 | 2026-10-07 | **Groq `openai/gpt-oss-120b` (primary) + `gpt-oss-20b` (fast)** | free tier, very fast; Llama 3 models used by the prototype are deprecated | — |
 | 2026-10-07 | **uv** for Python, `pyproject.toml` + lockfile | reproducible installs, fast | pip + requirements.txt (still exported for compatibility) |
 | 2026-10-07 | **JWT access (15 min) + refresh (7 days)**, bcrypt | stateless API that scales horizontally; `jti` claim ready for revocation | server sessions |
+| 2026-10-07 | **LangSmith** for tracing | zero-code with LangChain/LangGraph (env vars only), free tier, LangGraph tooling | Langfuse Cloud, self-hosted Langfuse (needs Docker + ClickHouse), none |
+| 2026-10-07 | **Structure what code consumes, stream what people read** | generate/debug/optimize return a typed `SQLAnswer` we can validate; explain streams prose over SSE | streaming partial JSON (complicates validation) |
+| 2026-10-07 | **Strict JSON-schema output** (Groq constrained decoding) | the decoder can only emit schema-valid JSON on gpt-oss | function calling (kept as a config switch), JSON mode (no schema guarantee) |
+| 2026-10-07 | **Retry transient errors, fall back on rate limits**; Groq SDK retries off | the SDK would sleep up to 60 s per 429 before any fallback | SDK default retries |
+| 2026-10-07 | **sqlglot validation pulled into Phase 1** | cheap, visible quality gate on every answer; groundwork for the Validator agent | wait until Phase 6 |
+| 2026-10-07 | **Per-prompt reasoning effort** (explain = low) | measured: medium effort spent 71% of output on hidden reasoning; low was 2.5× faster to first word and 4.4× cheaper | one global effort |
 
 ## Phases
 
@@ -33,13 +39,17 @@ Every phase follows the same loop:
 - 23 tests; docker-compose for Postgres + Qdrant; DB login via POSTGRES_* settings; notebook volume 1.
 - Details: [phases/phase-0-foundation.md](phases/phase-0-foundation.md)
 
-### Phase 1: LLM layer
-- Structured outputs (Pydantic schemas via `with_structured_output`) instead of string parsing.
-- Streaming tokens to the UI (Server-Sent Events).
-- Token counting, cost/latency per request stored with history.
-- Prompt versioning (prompt id + version saved with each run).
-- Tracing with Langfuse (self-hosted) or LangSmith.
-- **Learn:** tokenization, sampling, structured output / JSON mode, streaming, observability.
+### Phase 1: LLM layer ✅ (2026-10-07)
+- Structured output: `with_structured_output(SQLAnswer, method="json_schema", strict=True, include_raw=True)`.
+- SQL validation with sqlglot (`valid`, `dialect`, `statement_types`, `errors`) on every generated query.
+- Streaming explanations over Server-Sent Events (FastAPI `EventSourceResponse`); frontend reads the stream with `fetch` + `ReadableStream`.
+- Token usage (incl. reasoning and cached tokens), latency and list-price cost per call, stored with history (migration 2: 7 new columns, `details` as JSONB).
+- Reasoning effort per request (low/medium/high) with per-prompt defaults; "Thinking" switch in the UI.
+- Resilience: LangChain `with_retry` for transient errors, `with_fallbacks` to the other model tier on 429, HTTP 429 + `Retry-After` when both are limited.
+- Prompt versioning (`PromptSpec`, e.g. `generate_sql@v2`) recorded in history and traces.
+- LangSmith tracing, configured once at startup; DB connection released during LLM calls.
+- 51 tests; verified live end to end (API, PostgreSQL, Groq, browser UI).
+- Details: [phases/phase-1-llm-layer.md](phases/phase-1-llm-layer.md)
 
 ### Phase 2: Schema ingestion
 - Inputs: pasted SQL, `.sql` upload, screenshot (vision model → DDL), free text.

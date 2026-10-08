@@ -26,6 +26,8 @@ import {
 } from "lucide-react"
 import { Link } from "react-router";
 import { api } from "./lib/api";
+import ReasoningEffortSelect from "./components/ReasoningEffortSelect";
+import LLMResultDetails from "./components/LLMResultDetails";
 
 export default function QueryBuilderMainPage() {
   const [selectedTool, setSelectedTool] = useState("Generate SQL")
@@ -39,8 +41,20 @@ export default function QueryBuilderMainPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [showExamples, setShowExamples] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState(null) // null = server default
+  const [lastResult, setLastResult] = useState(null) // full LLMResponse of the last run
 
   const tools = ["Generate SQL", "Explain SQL", "Optimize SQL", "Fix SQL", "Format SQL", "SQL to Natural Language"]
+
+  // Was referenced by the Examples panel but never defined (clicking "Examples" crashed the page).
+  const examples = [
+    "Show the number of users who signed up in the last week, grouped by date",
+    "Top 5 customers by total order amount in the last 30 days",
+    "Monthly revenue for 2025, highest month first",
+    "Products that have never been ordered",
+    "Average order value per product category",
+    "Users who placed more than 3 orders but none in the last 60 days",
+  ]
 
   const sqlDialects = [
     { value: "MySQL", label: "MySQL", icon: "🐬" },
@@ -87,15 +101,18 @@ export default function QueryBuilderMainPage() {
 
   const handleGenerateSQL = async () => {
     setIsGenerating(true);
+    setLastResult(null);
     try {
       const data = await api.generateSql({
         question: queryInput,
         dialect: selectedDialect,
         saveHistory: rememberHistory,
+        reasoningEffort,
       })
       setGeneratedSQL(data.output)
+      setLastResult(data)
     } catch (err) {
-      // ApiError carries the backend's message (validation, LLM down, network...)
+      // ApiError carries the backend's message (validation, rate limit, LLM down, network...)
       setGeneratedSQL(`-- Error: ${err.message}`)
     } finally {
       setIsGenerating(false);
@@ -399,6 +416,7 @@ export default function QueryBuilderMainPage() {
                     Clear Context
                   </button>
                 </div>
+                <ReasoningEffortSelect value={reasoningEffort} onChange={setReasoningEffort} disabled={isGenerating} />
               </div>
             </motion.div>
 
@@ -508,6 +526,7 @@ export default function QueryBuilderMainPage() {
                   <div className="text-gray-500 flex items-center justify-center h-full">-- No SQL generated yet</div>
                 )}
               </div>
+              <LLMResultDetails result={lastResult} />
             </motion.div>
           </div>
         </div>

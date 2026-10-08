@@ -55,7 +55,7 @@
       notebook, you should be able to draw its diagram from memory.</p>
     </div>
   </div>
-  <div class="cover-meta">Volume 1 · Phase 0 edition · October 2026<br>repo: github.com/TanmayDeshpande29/AI-powered-SQL-Assistant</div>
+  <div class="cover-meta">Volume 1 · Phase 1 edition · October 2026<br>repo: github.com/TanmayDeshpande29/AI-powered-SQL-Assistant</div>
 </section>
 
 <!-- ============================ CONTENTS ============================ -->
@@ -107,12 +107,12 @@
     d.line(30, 72, 655, 72, { width: 2 })
     labels.forEach((label, i) => {
       const x = 42 + i * 67
-      const fill = i === 0 ? "green" : i === 1 ? "orange" : "white"
+      const fill = i <= 1 ? "green" : i === 2 ? "orange" : "white"
       d.circle(x, 72, 34, { fill, label: String(i), size: 19, font: "title", fillStyle: "solid" })
       d.text(x, i % 2 === 0 ? 118 : 26, label, { size: 14 })
     })
-    d.text(42, 145, "✓ done", { size: 15, color: "green" })
-    d.text(109, 145, "next", { size: 15, color: "orange" })
+    d.text(75, 145, "✓ done", { size: 15, color: "green" })
+    d.text(176, 145, "next", { size: 15, color: "orange" })
   })
   </script>
   <div class="cols">
@@ -417,7 +417,7 @@ PrimaryLLM = Annotated[BaseChatModel,
       rows.forEach(([name, type, tag], i) => {
         const ry = y + 55 + i * 25
         d.text(x + 12, ry, name, { anchor: "start", size: 15, font: "bold" })
-        d.text(x + w - 12, ry, type, { anchor: "end", size: 14, color: tag === "PK" ? "orange" : tag === "FK" ? "purple" : "gray" })
+        d.text(x + w - 12, ry, type, { anchor: "end", size: 14, color: tag === "PK" ? "orange" : tag === "FK" ? "purple" : tag === "P1" ? "green" : "gray" })
       })
       return { x, y, w, h }
     }
@@ -429,6 +429,7 @@ PrimaryLLM = Annotated[BaseChatModel,
       ["id", "UUID · PK", "PK"], ["user_id", "UUID · FK → users.id", "FK"], ["tool", "VARCHAR(32)"],
       ["dialect", "VARCHAR(40)"], ["input_text / output_text", "TEXT"], ["model", "VARCHAR(100)"],
       ["latency_ms", "INTEGER"], ["created_at", "TIMESTAMPTZ"],
+      ["+ tokens · cost · details", "7 cols · phase 1", "P1"],
     ], "green")
     d.line(290, 65, 385, 90, { width: 1.8 })
     d.text(300, 52, "1", { size: 20, font: "title", weight: 700 })
@@ -436,7 +437,7 @@ PrimaryLLM = Annotated[BaseChatModel,
     d.line(370, 90, 385, 100, { width: 1.6 })
     d.text(368, 108, "N", { size: 20, font: "title", weight: 700 })
     d.text(338, 135, "ON DELETE\nCASCADE", { size: 13.5, color: "red" })
-    d.text(530, 268, "index (user_id, created_at) for “my history, newest first”", { size: 14, color: "orange" })
+    d.text(530, 296, "index (user_id, created_at) for “my history, newest first”", { size: 14, color: "orange" })
     d.box(10, 228, 280, 108, null, { dashed: true })
     d.text(150, 248, "coming in phases 2–5", { size: 19, font: "title", weight: 700, color: "gray" })
     d.text(150, 294, "workspaces · schema_sources\nschema_tables · schema_columns\nfk_edges · eval_runs", { size: 15, color: "gray" })
@@ -815,7 +816,7 @@ payload = jwt.decode(token, SECRET,
 
 <!-- ============================ CH 5 ============================ -->
 <section class="page" data-toc="5 · LLM fundamentals" data-toc-level="chapter" data-status="built">
-  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 0 · deeper in 1</span></div>
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phases 0–1</span></div>
   <h1 class="chapter"><span class="no">5</span>LLM fundamentals</h1>
   <h2>An LLM predicts the next token</h2>
   <figure class="sketch"><svg id="d-next"></svg></figure>
@@ -945,7 +946,7 @@ payload = jwt.decode(token, SECRET,
   <ul class="arrows">
     <li><b>LCEL</b> (LangChain Expression Language): the <code>|</code> operator composes Runnables into a <code>RunnableSequence</code>; output of one = input of the next.</li>
     <li><b>Why LangChain?</b> Swap providers (ChatGroq ⇄ ChatOpenAI) without rewriting code, standard message/tool types, and <b>LangGraph</b> (phase 6) is built on it.</li>
-    <li><b>Defensive parsing:</b> models sometimes ignore “no markdown” and wrap SQL in <code>```sql</code> fences. <code>extract_sql()</code> unwraps them. Phase 1 adds structured JSON output.</li>
+    <li><b>Defensive parsing:</b> models sometimes ignore “no markdown” and wrap SQL in <code>```sql</code> fences. <code>extract_sql()</code> unwraps them. Phase 1 adds structured output on top (next pages).</li>
   </ul>
   <div class="cols">
     <div class="code"><span class="c"># services/sql.py</span>
@@ -964,6 +965,342 @@ chain = prompt | llm | StrOutputParser()
 </section>
 
 <!-- ============================ CH 6 ============================ -->
+<section class="page" data-toc="Structured output">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>Structured output: make the model fill in a form</h2>
+  <p>Free text is for people; code needs <b>fields it can trust</b>. We describe the answer as a Pydantic class, LangChain turns
+  it into a <b>JSON Schema</b>, and Groq's decoder is <span class="hl">only allowed to produce JSON that matches it</span>.</p>
+  <figure class="sketch"><svg id="d-structured"></svg></figure>
+  <script>
+  sketch("d-structured", 680, 246, (d) => {
+    const py = d.box(4, 8, 200, 104, "class SQLAnswer\n  sql: str\n  explanation: str\n  assumptions: list[str]\n  tables_used: list[str]", { fill: "blue", size: 14, font: "bold" })
+    const js = d.box(262, 8, 196, 104, '{"type": "object",\n "properties": {…},\n "required": [all 4],\n "additionalProperties":\n   false}', { fill: "yellow", size: 13.5, font: "bold" })
+    d.box(500, 10, 176, 96, "Groq · gpt-oss", { shape: "cloud", fill: "purple", size: 17, sub: "constrained\ndecoding" })
+    d.arrow(py.right, js.left, { label: "JSON\nSchema", labelOffset: [0, -26], size: 13 })
+    d.arrow(js.right, [500, 60], { label: "sent\nalong", labelOffset: [0, -26], size: 13 })
+    const raw = d.box(468, 146, 208, 96, '{"sql": "SELECT …",\n "explanation": "…",\n "assumptions": […],\n "tables_used": ["orders"]}', { fill: "gray", size: 13.5, font: "bold" })
+    const obj = d.box(4, 146, 236, 96, "SQLAnswer object", { fill: "green", size: 17, sub: "typed fields our code\ncan validate and store" })
+    d.arrow([588, 108], [588, 146], { label: "JSON reply", labelOffset: [50, 0], size: 13 })
+    d.arrow(raw.left, obj.right, { label: "parse + validate (Pydantic)", labelOffset: [0, -12], size: 13 })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Method</th><th>How it works</th><th>Guarantee</th><th>SQLAssist</th></tr>
+    <tr><td><b>JSON mode</b></td><td><code>response_format: json_object</code></td><td>valid JSON, any shape</td><td>not used</td></tr>
+    <tr><td><b>Tool calling</b></td><td>schema sent as a tool; the model “calls” it with arguments</td><td>usually matches</td><td>config option</td></tr>
+    <tr><td><b>Strict JSON schema</b></td><td>the decoder masks every token that would break the schema</td><td><b>always matches</b></td><td>✓ default</td></tr>
+  </table>
+  <figure class="sketch"><svg id="d-mask"></svg></figure>
+  <script>
+  sketch("d-mask", 680, 150, (d) => {
+    d.text(8, 10, 'generated so far:  {"sql": "SELECT …",   next token?', { anchor: "start", size: 15, font: "bold" })
+    d.bars(20, 24, 400, 100, [
+      { label: '"explanation"', value: 55, top: "0.55", color: "green" },
+      { label: '"notes"', value: 25, top: "0.25", color: "pink" },
+      { label: "}", value: 12, top: "0.12", color: "pink" },
+      { label: '"sql"', value: 8, top: "0.08", color: "pink" },
+    ], { max: 60, gap: 18, labelSize: 13 })
+    d.text(450, 44, "masked by the schema:", { anchor: "start", size: 15 })
+    d.text(450, 68, '"notes" is not a known key', { anchor: "start", size: 14, color: "red" })
+    d.text(450, 90, "} — required keys still missing", { anchor: "start", size: 14, color: "red" })
+    d.text(450, 112, '"sql" — already written', { anchor: "start", size: 14, color: "red" })
+    d.text(450, 134, "→ sample only from ✓ tokens", { anchor: "start", size: 15, color: "green" })
+  })
+  </script>
+  <div class="cols">
+    <div class="code"><span class="c"># services/sql.py</span>
+llm.with_structured_output(
+    SQLAnswer, method=<span class="s">"json_schema"</span>,
+    strict=<span class="k">True</span>, include_raw=<span class="k">True</span>)
+<span class="c"># → {"raw": AIMessage,      ← token usage</span>
+<span class="c">#    "parsed": SQLAnswer,   ← typed fields</span>
+<span class="c">#    "parsing_error": None}</span></div>
+    <div>
+      <div class="tip small">The class <b>docstring and field descriptions travel inside the schema</b>: they are prompt text the model reads.</div>
+      <div class="warn small">Strict mode needs every field <i>required</i> and no extra keys. “No assumptions” is <code>[]</code>, not a missing field.</div>
+    </div>
+  </div>
+  <div class="qa small"><div class="q">Why not just ask for JSON in the prompt?</div><div class="a">A prompt is a request; the model can still add a sentence or forget a field. Constrained decoding makes invalid output <i>impossible</i>, so parsing never fails on format.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Reasoning models, tokens & cost">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>Reasoning models think before they answer</h2>
+  <p>gpt-oss first writes hidden <b>reasoning tokens</b> (a scratchpad), then the visible answer. You never see them, but you
+  <span class="hl">wait for them and pay for them</span>. Measured on our explain endpoint:</p>
+  <figure class="sketch"><svg id="d-think"></svg></figure>
+  <script>
+  sketch("d-think", 680, 200, (d) => {
+    const x0 = 120, px = 228  // pixels per second
+    const sx = (t) => x0 + t * px
+    d.text(8, 36, "medium\neffort", { anchor: "start", size: 15 })
+    d.box(sx(0), 18, sx(1.72) - sx(0), 38, "1,129 reasoning tokens (hidden)", { fill: "gray", size: 14 })
+    d.box(sx(1.72), 18, sx(2.27) - sx(1.72), 38, "text", { fill: "green", size: 14 })
+    d.text(8, 104, "low\neffort", { anchor: "start", size: 15 })
+    d.box(sx(0), 86, sx(0.69) - sx(0), 38, "6 + wait", { fill: "gray", size: 13 })
+    d.box(sx(0.69), 86, sx(1.03) - sx(0.69), 38, "text", { fill: "green", size: 14 })
+    d.line(sx(1.72), 10, sx(1.72), 150, { color: "red", dashed: true })
+    d.text(sx(1.72) + 4, 70, "first word 1.72 s", { anchor: "start", size: 14, color: "red" })
+    d.line(sx(0.69), 80, sx(0.69), 150, { color: "green", dashed: true })
+    d.text(sx(0.69) + 4, 140, "first word 0.69 s", { anchor: "start", size: 14, color: "green" })
+    d.line(x0, 160, sx(2.4), 160, { width: 1.6 })
+    ;[0, 0.5, 1, 1.5, 2].forEach((t) => { d.line(sx(t), 155, sx(t), 165); d.text(sx(t), 178, t + " s", { size: 13 }) })
+    d.text(560, 128, "2.5× faster start\n4.4× cheaper", { size: 16, color: "green", font: "title", weight: 700 })
+  })
+  </script>
+  <figure class="sketch"><svg id="d-effort"></svg></figure>
+  <script>
+  sketch("d-effort", 680, 175, (d) => {
+    d.text(160, 8, "reasoning tokens · generate (120b)", { size: 15, font: "title", weight: 700 })
+    d.bars(30, 22, 260, 128, [
+      { label: "low", value: 32, top: "32", color: "green" },
+      { label: "medium", value: 113, top: "113", color: "yellow" },
+      { label: "high", value: 661, top: "661", color: "orange" },
+    ], { gap: 30 })
+    d.text(510, 8, "latency", { size: 15, font: "title", weight: 700 })
+    d.bars(380, 22, 260, 128, [
+      { label: "low", value: 1.07, top: "1.07 s", color: "green" },
+      { label: "medium", value: 1.25, top: "1.25 s", color: "yellow" },
+      { label: "high", value: 2.33, top: "2.33 s", color: "orange" },
+    ], { gap: 30 })
+  })
+  </script>
+  <ul class="arrows small">
+    <li>Reasoning tokens <b>are output tokens</b>: billed at the output price and counted toward <code>max_tokens</code> (ours: 4096).</li>
+    <li><code>reasoning_effort</code> (low / medium / high) is our per-request <b>“Thinking”</b> switch. Defaults per prompt: generate = medium (correctness), explain = low (just describing).</li>
+    <li>Raw reasoning is kept away from users: providers advise against showing a model's unfiltered chain of thought. We store only the count.</li>
+  </ul>
+  <div class="cols">
+    <div class="box small"><b>Cost of one real “generate” call</b> (gpt-oss-120b list prices):
+      <div class="code" style="border:none;background:none;margin:1mm 0 0;padding:0">356 input  × $0.15 / 1M = $0.0000534
+202 output × $0.60 / 1M = $0.0001212
+                   total ≈ $0.000175</div>
+      ≈ $0.17 per 1,000 queries · free tier: $0, but rate-limited.</div>
+    <div class="warn small"><b>Money is not a float.</b> In binary floating point <code>0.1 + 0.2 = 0.30000000000000004</code>. Costs use Python <code>Decimal</code> and PostgreSQL <code>NUMERIC(12, 8)</code>: exact decimal arithmetic.</div>
+  </div>
+  <div class="qa small"><div class="q">What is time to first token (TTFT), and how did we cut it?</div><div class="a">The wait until the first visible word: network + queue + prompt processing + <b>hidden reasoning</b>. Low effort removed ~1,100 reasoning tokens from explanations, so the first word arrives in 0.69 s instead of 1.72 s.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Streaming with Server-Sent Events">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>Streaming: show words as they're written</h2>
+  <figure class="sketch"><svg id="d-transports"></svg></figure>
+  <script>
+  sketch("d-transports", 680, 205, (d) => {
+    const panels = [["polling", 4], ["Server-Sent Events", 236], ["WebSocket", 468]]
+    panels.forEach(([title, x]) => {
+      d.text(x + 104, 10, title, { size: 18, font: "title", weight: 700, color: title.startsWith("Server") ? "green" : "ink" })
+      d.box(x + 4, 26, 64, 28, "client", { fill: "blue", size: 13 })
+      d.box(x + 140, 26, 64, 28, "server", { fill: "green", size: 13 })
+      d.line(x + 36, 54, x + 36, 196, { dashed: true, color: "gray", width: 1 })
+      d.line(x + 172, 54, x + 172, 196, { dashed: true, color: "gray", width: 1 })
+    })
+    ;[70, 116, 162].forEach((y, i) => {
+      d.arrow([40, y], [172, y], { label: "new?", size: 12, labelOffset: [0, -9] })
+      d.arrow([172, y + 18], [40, y + 18], { dashed: true, label: i < 2 ? "no" : "yes", size: 12, labelOffset: [0, -9] })
+    })
+    d.arrow([272, 68], [404, 68], { label: "POST once", size: 12, labelOffset: [0, -9] })
+    ;[92, 112, 132, 152, 172].forEach((y) => d.arrow([404, y], [272, y], { color: "green" }))
+    d.text(338, 194, "many events, one request", { size: 12, color: "green" })
+    ;[76, 112, 148, 184].forEach((y, i) => d.arrow(i % 2 ? [636, y] : [504, y], i % 2 ? [504, y] : [636, y], { color: "purple" }))
+  })
+  </script>
+  <div class="cols">
+    <div>
+      <p class="small"><b>SSE</b> = one ordinary HTTP response that stays open, with the server writing events into it. One-way, plain HTTP, works through proxies: exactly what token streaming needs. (WebSockets are for two-way traffic, like chat or games.)</p>
+      <div class="code">HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+event: token
+data: {"text": "Lists each"}
+
+event: token
+data: {"text": " department"}
+
+: ping          <span class="c">← keep-alive comment</span>
+
+event: done
+data: {"output": "…", "usage": {…}}</div>
+    </div>
+    <div>
+      <ul class="arrows small">
+        <li><b>FastAPI:</b> the route is an <code>async def</code> that <code>yield</code>s <code>ServerSentEvent</code>s, with <code>response_class=EventSourceResponse</code>. Keep-alive pings every 15 s come free.</li>
+        <li><b>Browser:</b> <code>EventSource</code> can only do GET without headers. We need POST + a Bearer token, so we read <code>fetch()</code>'s body stream and split events at blank lines (network chunks don't line up with events).</li>
+        <li><b>Cancel:</b> an <code>AbortController</code> stops the fetch; the server notices the disconnect and stops generating.</li>
+      </ul>
+      <div class="warn small">The <b>200 status is sent with the first byte</b>. Auth and validation run before the stream starts (normal 401/422 JSON); anything that fails later can only be an <code>event: error</code>.</div>
+    </div>
+  </div>
+  <div class="tip small"><b>Our rule:</b> structure what code consumes (generate, debug, optimize: validated <code>SQLAnswer</code>), stream what people read (explain: markdown prose).</div>
+  <div class="qa small"><div class="q">Why stream at all if the total time is the same?</div><div class="a">Perceived latency. Reading can start after ~0.7 s instead of after the full answer, and a long answer shows visible progress instead of a frozen spinner.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Retries, fallbacks & rate limits">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>When the LLM fails: retry or fall back?</h2>
+  <figure class="sketch"><svg id="d-policy"></svg></figure>
+  <script>
+  sketch("d-policy", 680, 225, (d) => {
+    const call = d.box(4, 88, 96, 48, "LLM call", { fill: "gray", size: 15 })
+    const p = d.box(128, 82, 132, 60, "primary tier", { fill: "blue", size: 16, sub: "gpt-oss-120b" })
+    d.arrow(call.right, p.left)
+    const ok = d.box(372, 4, 110, 42, "answer ✓", { shape: "ellipse", fill: "green", size: 15 })
+    d.arrow([240, 82], ok.left, { label: "ok", size: 13, color: "green" })
+    const rt = d.box(372, 82, 150, 60, "retry same model", { fill: "yellow", size: 14, sub: "backoff + jitter, ≤ 2×" })
+    d.arrow([260, 102], [372, 102], { label: "network · 5xx", size: 12, labelOffset: [0, -10] })
+    d.arrow([372, 128], [260, 128], { dashed: true })
+    const f = d.box(372, 166, 150, 52, "fallback tier", { fill: "orange", size: 15, sub: "gpt-oss-20b" })
+    d.path([[194, 142], [194, 192], [372, 192]], { label: "429 rate limit", labelAt: [282, 206], size: 12, color: "red" })
+    const ok2 = d.box(566, 112, 110, 46, "answer ✓\nfallback_used", { fill: "green", size: 13 })
+    d.arrow([522, 182], [566, 148], { color: "green" })
+    const e = d.box(566, 176, 110, 44, "HTTP 429 +\nRetry-After", { fill: "pink", size: 13 })
+    d.arrow([522, 204], [566, 204], { color: "red" })
+  })
+  </script>
+  <div class="cols">
+    <div>
+      <ul class="arrows small">
+        <li><b>Retry</b> the same thing when the failure is probably temporary: dropped connection, timeout, provider 5xx.</li>
+        <li><b>Fall back</b> to something else when waiting won't help soon: rate limit (429), one model's outage.</li>
+        <li><b>Exponential backoff</b>: wait 0.5 s, 1 s, 2 s… so a struggling server gets room to recover.</li>
+        <li><b>Jitter</b> (randomness) spreads clients out so they don't retry in synchronized waves: the <i>thundering herd</i>.</li>
+      </ul>
+    </div>
+    <figure class="sketch"><svg id="d-jitter"></svg></figure>
+  </div>
+  <script>
+  sketch("d-jitter", 330, 175, (d) => {
+    d.text(80, 8, "no jitter", { size: 15, font: "title", weight: 700, color: "red" })
+    d.text(250, 8, "with jitter", { size: 15, font: "title", weight: 700, color: "green" })
+    ;[0, 1, 2, 3, 4].forEach((i) => { d.circle(50, 40 + i * 24, 13, { fill: "pink", fillStyle: "solid" }); d.circle(110, 40 + i * 24, 13, { fill: "pink", fillStyle: "solid" }) })
+    ;[[188, 40], [214, 64], [236, 88], [262, 112], [292, 136], [200, 160]].forEach(([x, y]) => d.circle(x, y, 13, { fill: "green", fillStyle: "solid" }))
+    d.line(20, 168, 150, 168); d.line(175, 168, 320, 168)
+    d.text(80, 160, "retries pile up", { size: 12, color: "red" })
+  })
+  </script>
+  <div class="warn small"><b>The hidden retry we found.</b> By default the Groq SDK retries a 429 by itself, sleeping for the server's <code>Retry-After</code> (up to 60 s) <i>each</i> time. With 2 retries, one request could hang ~2 minutes before our code ran. Fix: <code>ChatGroq(max_retries=0)</code> + LangChain <code>with_retry(TRANSIENT_ERRORS)</code> + <code>with_fallbacks(exceptions_to_handle=(RateLimitError,))</code>. Lesson: <span class="hl">know your SDK's defaults</span>.</div>
+  <table class="hand compact">
+    <tr><th>Failure</th><th>What we do</th><th>The client sees</th></tr>
+    <tr><td>network error / timeout / 5xx</td><td>retry the same model (backoff + jitter)</td><td>a normal answer, a bit later</td></tr>
+    <tr><td>429 on the primary</td><td>switch to the fast tier immediately</td><td>answer + “fallback model” badge</td></tr>
+    <tr><td>429 on both tiers</td><td>give up quickly</td><td><b>429</b> + <code>Retry-After</code> / SSE <code>error</code></td></tr>
+    <tr><td>unparseable or empty answer</td><td>log it</td><td><b>502</b> <code>llm_unavailable</code></td></tr>
+  </table>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Observability: tracing with LangSmith">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>Tracing: see inside every LLM call</h2>
+  <p>A <b>trace</b> is the tree of steps one request went through, each with timing, inputs and outputs (a <i>span</i> or <i>run</i>).
+  For LLM apps it answers “what exactly did we send, what came back, and where did the time go?”</p>
+  <figure class="sketch"><svg id="d-waterfall"></svg></figure>
+  <script>
+  sketch("d-waterfall", 680, 268, (d) => {
+    const x0 = 268, px = 320  // pixels per second
+    const sx = (t) => x0 + t * px
+    const rows = [
+      ["generate_sql  (run)", 0, 0, 1.02, "blue", "1.02 s"],
+      ["ChatPromptTemplate", 1, 0, 0.004, "gray", "2 ms"],
+      ["RunnableWithFallbacks", 1, 0.004, 1.018, "yellow", ""],
+      ["RunnableRetry → ChatGroq 120b", 2, 0.006, 1.014, "purple", "558 tok"],
+      ["PydanticOutputParser", 2, 1.014, 1.018, "gray", "1 ms"],
+    ]
+    rows.forEach(([name, indent, t0, t1, fill, note], i) => {
+      const y = 18 + i * 36
+      d.text(8 + indent * 18, y + 14, name, { anchor: "start", size: 14, font: indent === 0 ? "bold" : "hand" })
+      d.box(sx(t0), y, Math.max(6, sx(t1) - sx(t0)), 26, null, { fill, fillStyle: "solid" })
+      if (note) d.text(sx(t1) + 8, y + 14, note, { anchor: "start", size: 13, color: "gray" })
+    })
+    d.text(8 + 36, 18 + 5 * 36 + 14, "ChatGroq 20b  (only if 429)", { anchor: "start", size: 14, color: "gray" })
+    d.box(sx(0.006), 18 + 5 * 36, 120, 26, null, { dashed: true })
+    d.line(x0, 242, sx(1.05), 242)
+    ;[0, 0.5, 1].forEach((t) => { d.line(sx(t), 238, sx(t), 246); d.text(sx(t), 258, t + " s", { size: 12, color: "gray" }) })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>What we record for every call</th><th>history row (PostgreSQL)</th><th>LangSmith trace</th></tr>
+    <tr><td>prompt version, model, reasoning effort</td><td>✓</td><td>✓ (tags + metadata)</td></tr>
+    <tr><td>tokens (input / output / reasoning), latency, cost</td><td>✓</td><td>✓ per step</td></tr>
+    <tr><td>full prompt messages, JSON schema, raw reply</td><td>—</td><td>✓</td></tr>
+    <tr><td>retries and fallbacks as child runs</td><td>fallback flag</td><td>✓</td></tr>
+    <tr><td>user id</td><td>✓ (owner)</td><td>✓ (metadata, filterable)</td></tr>
+  </table>
+  <div class="cols">
+    <div class="small">
+      <p><b>Turn it on:</b> free account at smith.langchain.com → API key → in <code>backend/.env</code> set <code>LANGSMITH_TRACING=true</code> and <code>LANGSMITH_API_KEY</code>. LangChain then traces every chain automatically, and LangGraph later traces agents too.</p>
+      <div class="warn">The LangSmith SDK <b>caches environment variables on first read</b>, and pydantic-settings doesn't export <code>.env</code> to the environment. So <code>configure_tracing()</code> copies them once at startup, before any LLM call.</div>
+    </div>
+    <div class="small">
+      <div class="warn"><b>Privacy:</b> traces contain prompts and answers, so user questions and SQL leave your server. Fine for development; production needs consent, redaction, or a self-hosted tracer (Langfuse).</div>
+      <div class="qa"><div class="q">Why tracing, not just logs?</div><div class="a">Logs are flat lines; a trace keeps the <i>causal tree</i> (which retry, which fallback, which prompt version) with timing per step: what you need to debug multi-step chains and, later, agents.</div></div>
+    </div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Validating output: ASTs & prompt versions">
+  <div class="page-head"><span>5 · LLM fundamentals</span><span class="stamp built">BUILT ✓ phase 1</span></div>
+  <h2>Never trust model output: parse it</h2>
+  <p><b>sqlglot</b> turns SQL text into an <b>AST</b> (abstract syntax tree): typed nodes instead of characters. If the text
+  can't be parsed for the chosen dialect, it isn't valid SQL, and sqlglot says <i>where</i> it broke.</p>
+  <figure class="sketch"><svg id="d-ast"></svg></figure>
+  <script>
+  sketch("d-ast", 680, 280, (d) => {
+    d.text(340, 10, "SELECT name, COUNT(*) FROM users WHERE active = 1 GROUP BY name", { size: 15, font: "bold" })
+    const root = d.box(285, 34, 110, 38, "Select", { fill: "yellow", size: 17 })
+    const kids = [["expressions", 20, "blue"], ["from", 200, "green"], ["where", 360, "orange"], ["group", 540, "purple"]]
+    const level1 = kids.map(([label, x, fill]) => {
+      const b = d.box(x, 108, 120, 34, label, { fill, size: 15 })
+      d.arrow([340, 72], b.top)
+      return b
+    })
+    const leaf = (x, y, label, parent, fill = "white") => {
+      const b = d.box(x, y, 104, 32, label, { fill, size: 13.5, fillStyle: "solid" })
+      d.arrow(parent.bottom, b.top)
+      return b
+    }
+    leaf(4, 176, "Column name", level1[0])
+    leaf(116, 176, "Count(Star)", level1[0])
+    leaf(208, 176, "Table users", level1[1])
+    const eq = leaf(368, 176, "EQ  (=)", level1[2])
+    leaf(548, 176, "Column name", level1[3])
+    leaf(318, 238, "Column active", eq)
+    leaf(432, 238, "Literal 1", eq)
+  })
+  </script>
+  <div class="cols">
+    <table class="hand compact">
+      <tr><th>Check</th><th>Who</th><th>Phase</th></tr>
+      <tr><td><b>syntax</b>: does it parse for MySQL / Postgres / …?</td><td>sqlglot</td><td>1 ✓</td></tr>
+      <tr><td><b>statement type</b>: SELECT or DELETE?</td><td>sqlglot (AST root)</td><td>1 ✓ → guard in 6</td></tr>
+      <tr><td><b>semantics</b>: do the tables and columns exist?</td><td>schema lookup</td><td>2 + 6</td></tr>
+      <tr><td><b>result correctness</b>: right rows?</td><td>execution accuracy</td><td>5</td></tr>
+    </table>
+    <div class="small">
+      <p>Our badge shows <code>valid · dialect · statement_types</code> or the first error with line and column, e.g. <i>“Line 1, column 37: Expecting )”</i>.</p>
+      <div class="warn">sqlglot doesn't know your tables: <code>SELECT x FROM no_such_table</code> still parses. Invalid SQL is <b>flagged, never hidden</b>: the user sees the problem.</div>
+    </div>
+  </div>
+  <h2>Prompt versions</h2>
+  <figure class="sketch"><svg id="d-pv"></svg></figure>
+  <script>
+  sketch("d-pv", 680, 112, (d) => {
+    const v1 = d.box(4, 22, 190, 62, "generate_sql@v1", { fill: "gray", size: 15, sub: "phase 0: “SQL only” text" })
+    const v2 = d.box(244, 22, 190, 62, "generate_sql@v2", { fill: "green", size: 15, sub: "phase 1: SQLAnswer fields" })
+    const v3 = d.box(484, 22, 192, 62, "generate_sql@v3", { dashed: true, size: 15, sub: "phase 2+: + your schema" })
+    d.arrow(v1.right, v2.left)
+    d.arrow(v2.right, v3.left, { dashed: true })
+    d.text(340, 104, "every history row and trace records which version answered → evals can compare them", { size: 14, color: "blue" })
+  })
+  </script>
+  <div class="qa small"><div class="q">Why version prompts if they're just strings?</div><div class="a">A wording change can silently improve one case and break ten others. With the version stored next to every result, Phase 5's evaluation can compare <code>@v2</code> and <code>@v3</code> on the same questions, and you can roll back.</div></div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
 <section class="page" data-toc="6 · RAG" data-toc-level="chapter" data-status="next">
   <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phases 2–4</span></div>
   <h1 class="chapter"><span class="no">6</span>RAG</h1>
@@ -1900,13 +2237,16 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>Alembic</b>: migration tool for SQLAlchemy; versioned schema changes.</p>
     <p><b>ANN</b>: approximate nearest neighbour search; trades a little accuracy for big speed.</p>
     <p><b>ASGI</b>: async interface between Python web servers (Uvicorn) and apps (FastAPI).</p>
+    <p><b>AST</b>: abstract syntax tree; code parsed into typed nodes (sqlglot builds one per SQL statement).</p>
     <p><b>async / await</b>: cooperative concurrency; <code>await</code> yields while waiting on I/O.</p>
+    <p><b>Backoff (exponential)</b>: wait longer after each failed retry (0.5 s, 1 s, 2 s…).</p>
     <p><b>bcrypt</b>: slow, salted password hash with a tunable cost factor.</p>
     <p><b>Bi-encoder</b>: embeds query and document separately; fast retrieval.</p>
     <p><b>BM25</b>: classic keyword ranking function (term frequency, IDF, length normalisation).</p>
     <p><b>Checkpointer</b>: LangGraph component that saves graph state after each step.</p>
     <p><b>Chunk</b>: one retrievable unit of knowledge (for us: a table card).</p>
     <p><b>Conditional edge</b>: graph edge whose target is chosen by a function at runtime.</p>
+    <p><b>Constrained decoding</b>: the decoder may only sample tokens that keep the output valid for a schema.</p>
     <p><b>Context window</b>: max tokens a model can attend to in one call (input + output).</p>
     <p><b>CORS</b>: browser rule; servers must allow other origins to read their responses.</p>
     <p><b>Cosine similarity</b>: angle-based similarity of two vectors, −1 … 1.</p>
@@ -1916,6 +2256,7 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>Event loop</b>: single thread that runs async tasks, switching at <code>await</code> points.</p>
     <p><b>Execution accuracy (EX)</b>: predicted SQL returns the same rows as the gold SQL.</p>
     <p><b>Faithfulness</b>: answer is fully supported by the retrieved context.</p>
+    <p><b>Fallback</b>: switch to an alternative (e.g. another model) when the first choice fails.</p>
     <p><b>FastMCP</b>: Python framework for building MCP servers with decorators.</p>
     <p><b>Fine-tuning</b>: further training a model's weights on your examples.</p>
     <p><b>Golden dataset</b>: hand-checked questions with known correct answers for evaluation.</p>
@@ -1927,8 +2268,10 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>Hybrid search</b>: keyword (BM25) + semantic (dense) search, fused (e.g. RRF).</p>
     <p><b>HyDE</b>: embed a hypothetical answer instead of the question to improve retrieval.</p>
     <p><b>IDOR</b>: insecure direct object reference; accessing others' data by changing an id.</p>
+    <p><b>Jitter</b>: randomness added to retry delays so clients don't retry in sync.</p>
     <p><b>Idempotent</b>: repeating a request has the same effect as doing it once (PUT, DELETE).</p>
     <p><b>JSON-RPC</b>: lightweight request/response protocol; the wire format of MCP.</p>
+    <p><b>JSONB</b>: PostgreSQL's binary JSON type: queryable and indexable.</p>
     <p><b>JWT</b>: signed token (header.payload.signature) carrying claims like user id + expiry.</p>
     <p><b>LangChain</b>: framework of composable LLM components (prompts, models, parsers, tools).</p>
     <p><b>LangGraph</b>: library for stateful agent workflows as graphs, with memory and HITL.</p>
@@ -1960,25 +2303,31 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>RAG</b>: retrieval-augmented generation; retrieve context, then generate with it.</p>
     <p><b>Rate limiting</b>: capping requests per user/time window (e.g. token bucket) → 429.</p>
     <p><b>ReAct</b>: agent pattern alternating Thought → Action → Observation.</p>
+    <p><b>Reasoning tokens</b>: hidden “thinking” a reasoning model generates before answering; billed as output.</p>
     <p><b>Recall@k</b>: share of all relevant items that appear in the top-k.</p>
     <p><b>Reducer</b>: rule for merging a node's update into LangGraph state.</p>
     <p><b>Reflection</b>: a critic's feedback is fed back so the generator can fix its output.</p>
     <p><b>Refresh token</b>: long-lived token used only to obtain new access tokens.</p>
     <p><b>Reranker</b>: model that re-scores retrieved candidates more precisely (cross-encoder).</p>
+    <p><b>Retry-After</b>: HTTP header telling a client how long to wait (sent with 429).</p>
     <p><b>RRF</b>: reciprocal rank fusion; merge rankings with Σ 1/(k + rank).</p>
     <p><b>Runnable</b>: LangChain interface with invoke / ainvoke / stream / batch.</p>
     <p><b>Salt</b>: random per-password value mixed into a hash to defeat precomputed tables.</p>
     <p><b>Semantic cache</b>: reuse answers for questions whose embeddings are near-identical.</p>
+    <p><b>SSE</b>: Server-Sent Events; one HTTP response the server keeps writing events into.</p>
     <p><b>Session (DB)</b>: SQLAlchemy unit of work; tracks objects and commits transactions.</p>
     <p><b>sqlglot</b>: SQL parser/transpiler for 20+ dialects; produces an AST.</p>
     <p><b>Sparse vector</b>: mostly-zero vector of keyword weights (BM25-style) for lexical search.</p>
     <p><b>State (LangGraph)</b>: typed dict shared by all graph nodes.</p>
+    <p><b>Structured output</b>: the model returns data matching a schema instead of free text.</p>
     <p><b>Stateless API</b>: server keeps no per-user memory between requests; easy to replicate.</p>
     <p><b>Streamable HTTP</b>: MCP's remote transport (HTTP POST + optional SSE stream).</p>
     <p><b>Temperature</b>: sampling knob; low = focused/deterministic, high = random/creative.</p>
     <p><b>Token</b>: unit of text an LLM reads and writes (≈ 4 English characters).</p>
+    <p><b>Trace / span</b>: the tree of timed steps one request went through / one step in it.</p>
     <p><b>Tool calling</b>: model outputs a structured function call that the app executes.</p>
     <p><b>Transaction</b>: group of DB writes that succeed or fail together (ACID).</p>
+    <p><b>TTFT</b>: time to first token; the wait before the first visible output.</p>
     <p><b>UUID</b>: 128-bit random identifier; non-guessable primary keys.</p>
     <p><b>Uvicorn</b>: ASGI web server that runs our FastAPI app.</p>
     <p><b>Vector database</b>: database optimised for storing and searching embeddings.</p>
@@ -2035,6 +2384,56 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
   <div class="sticky pink"><b>My takeaways:</b> fix the foundation before adding AI · every boundary (HTTP, DB, LLM) needs explicit error handling ·
   test with fakes, verify with the real thing · <span class="hl">the LLM never saw the schema</span>, which is exactly why phases 2–4 (RAG) exist.</div>
   <div class="sticky blue" style="transform:rotate(0.6deg)"><b>Next → Phase 1 (LLM layer):</b> structured JSON outputs, streaming tokens to the UI, token counting &amp; cost tracking, prompt versioning, first LangSmith/Langfuse traces.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Phase journal · 1: LLM layer" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>phase journal</span><span class="stamp built">DONE ✓ 2026-10-07</span></div>
+  <h1 class="chapter"><span class="no">1</span>Phase 1 · LLM layer</h1>
+  <div class="cols">
+    <div>
+      <h3>What we built</h3>
+      <ul class="arrows small">
+        <li><b>Structured output</b>: <code>SQLAnswer</code> via strict JSON-schema decoding (explanation, assumptions, tables)</li>
+        <li><b>sqlglot validation</b> badge on every query: dialect, statement types, errors with line + column</li>
+        <li><b>SSE streaming</b> for explanations (FastAPI <code>EventSourceResponse</code> → <code>fetch</code> stream reader)</li>
+        <li><b>Tokens, latency, cost</b> per call, incl. reasoning + cached tokens; migration 2 (7 columns, JSONB details)</li>
+        <li><b>Reasoning effort</b> switch (Auto / Fast / Balanced / Thorough) with per-prompt defaults</li>
+        <li><b>Retry vs fallback</b> policy; 429 + <code>Retry-After</code>; Groq SDK's hidden retries switched off</li>
+        <li><b>Prompt versions</b> (<code>generate_sql@v2</code>) in history and traces</li>
+        <li><b>LangSmith tracing</b> (opt-in) · DB connection released during LLM calls</li>
+      </ul>
+      <h3>How we verified it</h3>
+      <ul class="arrows small">
+        <li>51 pytest tests with a fake provider (structured, streaming, 429s, outages)</li>
+        <li>migration up / down / drift check on your real PostgreSQL</li>
+        <li>live API run: generate, debug, streamed explain, history with tokens + cost</li>
+        <li>browser: Examples, effort switch, badges, streaming sampled every 100 ms</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured, then changed</h3>
+      <table class="hand compact tiny">
+        <tr><th>explain (20b)</th><th>medium</th><th>low ✓</th></tr>
+        <tr><td>reasoning tokens</td><td>1,129</td><td>6</td></tr>
+        <tr><td>first visible word</td><td>1.72 s</td><td>0.69 s</td></tr>
+        <tr><td>whole answer</td><td>2.27 s</td><td>1.03 s</td></tr>
+        <tr><td>cost</td><td>$0.00049</td><td>$0.00011</td></tr>
+      </table>
+      <h3>Problems found &amp; fixed</h3>
+      <table class="hand compact tiny">
+        <tr><th>Problem</th><th>Lesson</th></tr>
+        <tr><td>SDK slept up to 60 s per 429, twice</td><td>read your SDK's defaults</td></tr>
+        <tr><td>DB connection held during LLM calls</td><td>release before slow I/O</td></tr>
+        <tr><td>“Examples” crashed the page (since commit 1)</td><td>lint catches real bugs</td></tr>
+        <tr><td>blank API key in .env = "" not None</td><td>validate config edges</td></tr>
+        <tr><td>a test leaked env vars to other tests</td><td>inject, don't mutate globals</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="sticky pink"><b>My takeaways:</b> structure what code consumes, stream what people read · a schema with constrained decoding is a guarantee, a prompt is a wish ·
+  <span class="hl">measure before you tune</span> (reasoning effort) · retry the transient, fall back on the overloaded · every result carries its prompt version, so it can be evaluated later.</div>
+  <div class="sticky blue" style="transform:rotate(0.6deg)"><b>Next → Phase 2 (schema ingestion):</b> paste SQL, upload a <code>.sql</code> file or a screenshot → sqlglot + a vision model extract tables, columns and keys → stored in PostgreSQL → the Database Setup page shows <i>your</i> schema, and prompts finally get real table names.</div>
   <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
 </section>
 

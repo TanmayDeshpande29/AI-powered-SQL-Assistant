@@ -1,6 +1,6 @@
 
 import { motion, AnimatePresence } from "framer-motion"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
   Database,
   Play,
@@ -28,6 +28,8 @@ import {
 } from "lucide-react"
 import { Link } from "react-router";
 import { api } from "./lib/api";
+import ReasoningEffortSelect from "./components/ReasoningEffortSelect";
+import LLMResultDetails from "./components/LLMResultDetails";
 
 export default function SQLAssistantsPage() {
   // const [activeMode, setActiveMode] = useState("natural-language")
@@ -50,8 +52,14 @@ export default function SQLAssistantsPage() {
     "explain-sql": "",
     "optimize-sql": "",
   })
+  // Full LLMResponse per mode (validation, usage, cost...), shown under the output.
+  const [results, setResults] = useState({ "debug-sql": null, "explain-sql": null, "optimize-sql": null })
+  const [reasoningEffort, setReasoningEffort] = useState(null) // null = server default
 
   const speechRecognitionRef = useRef(null)
+  const abortRef = useRef(null) // cancels a running stream (new run, or leaving the page)
+
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const sqlDialects = [
     { value: "MySQL", label: "MySQL", icon: "🐬" },
@@ -107,20 +115,36 @@ export default function SQLAssistantsPage() {
   }
 
   const handleRun = async (mode) => {
-    setIsProcessing(true);
+    abortRef.current?.abort() // a newer run replaces any stream still in progress
+    const controller = new AbortController()
+    abortRef.current = controller
+    setIsProcessing(true)
+    setOutputs((prev) => ({ ...prev, [mode]: "" }))
+    setResults((prev) => ({ ...prev, [mode]: null }))
+    const request = { sql: inputs[mode], dialect: selectedDialect, reasoningEffort }
     try {
-      // UI modes are "debug-sql" / "explain-sql" / "optimize-sql"; the API expects "debug" etc.
-      // History is saved by the backend in the same request (no second call to fail).
-      const data = await api.assistSql({
-        mode: mode.replace("-sql", ""),
-        sql: inputs[mode],
-        dialect: selectedDialect,
-      })
-      setOutputs((prev) => ({ ...prev, [mode]: data.output }));
+      if (mode === "explain-sql") {
+        // Streamed: append each piece as it arrives instead of waiting for the whole answer.
+        const data = await api.streamExplain(request, {
+          signal: controller.signal,
+          onToken: (text) => setOutputs((prev) => ({ ...prev, [mode]: prev[mode] + text })),
+        })
+        setResults((prev) => ({ ...prev, [mode]: data }))
+      } else {
+        // UI modes are "debug-sql" / "optimize-sql"; the API expects "debug" / "optimize".
+        // History is saved by the backend in the same request (no second call to fail).
+        const data = await api.assistSql({ ...request, mode: mode.replace("-sql", "") })
+        setOutputs((prev) => ({ ...prev, [mode]: data.output }))
+        setResults((prev) => ({ ...prev, [mode]: data }))
+      }
     } catch (err) {
-      setOutputs((prev) => ({ ...prev, [mode]: `Error: ${err.message}` }));
+      if (err.name === "AbortError") return // cancelled on purpose: nothing to show
+      setOutputs((prev) => ({ ...prev, [mode]: `Error: ${err.message}` }))
     } finally {
-      setIsProcessing(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setIsProcessing(false)
+      }
     }
   }
 
@@ -354,13 +378,8 @@ export default function SQLAssistantsPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-400">Dialect:</span>
-                  <span className={`text-sm px-2 py-1 rounded bg-gradient-to-r ${currentMode?.color} text-white`}>
-                    {selectedDialect}
-                  </span>
-                </div>
+              <div className="flex items-center justify-between gap-3">
+                <ReasoningEffortSelect value={reasoningEffort} onChange={setReasoningEffort} disabled={isProcessing} />
 
                 <motion.button
                   whileHover={{ scale: 1.02 }}
@@ -433,7 +452,7 @@ export default function SQLAssistantsPage() {
                       transition={{ duration: 0.3 }}
                       className="whitespace-pre-wrap"
                     >
-                      {activeMode === "natural-language" ? (
+                      {activeMode !== "explain-sql" ? (
                         <pre className="text-cyan-400">
                           <code>{outputs[activeMode]}</code>
                         </pre>
@@ -444,10 +463,16 @@ export default function SQLAssistantsPage() {
                               {line}
                             </div>
                           ))}
+                          {isProcessing && <span className="inline-block w-2 h-4 bg-cyan-400 animate-pulse" />}
                         </div>
                       )}
                     </motion.div>
                   </AnimatePresence>
+                ) : isProcessing ? (
+                  <div className="flex items-center justify-center h-full text-gray-400 gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Thinking…</span>
+                  </div>
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-500">
                     <div className="text-center">
@@ -461,6 +486,7 @@ export default function SQLAssistantsPage() {
                   </div>
                 )}
               </div>
+              <LLMResultDetails result={results[activeMode]} />
             </motion.div>
           </div>
         </div>

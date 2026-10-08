@@ -56,6 +56,17 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def release_connection(session: AsyncSession) -> None:
+    """End the current transaction so its connection goes back to the pool.
+
+    Call this before slow work that doesn't touch the database (an LLM call takes
+    seconds). Otherwise the connection sits idle but reserved for the whole call, and a
+    burst of concurrent requests can exhaust the pool. Loaded objects stay readable
+    (expire_on_commit=False); the next query simply borrows a connection again.
+    """
+    await session.commit()
+
+
 async def check_database() -> None:
     """Run once at startup: log whether the database is reachable and migrated.
 

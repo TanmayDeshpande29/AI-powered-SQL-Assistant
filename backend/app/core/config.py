@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2  # retries for transient errors only (network, 5xx); see llm/client.py
+    # Hard cap per answer: bounds cost and latency. Reasoning tokens count toward it.
+    llm_max_output_tokens: int = 4096
     llm_reasoning_effort: ReasoningEffort = "medium"  # default when a request doesn't choose
     # How the model is forced into our output schema: "json_schema" = constrained decoding
     # (Groq strict mode, gpt-oss only); "function_calling" = schema sent as a tool definition.
