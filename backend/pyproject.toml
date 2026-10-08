@@ -21,6 +21,7 @@ dependencies = [
     # LLM orchestration
     "langchain-core>=0.3",
     "langchain-groq>=0.2",
+    "sqlglot>=30.21.0",
 ]
 
 [dependency-groups]

@@ -8,9 +8,27 @@ non-numeric POSTGRES_PORT fails fast instead of crashing on the first request.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
+
+ReasoningEffort = Literal["low", "medium", "high"]
+
+
+class ModelPrice(BaseModel):
+    """USD per 1 million tokens, as listed by the provider."""
+
+    input: float
+    output: float
+    cached_input: float | None = None
+
+
+# Groq list prices, checked 2026-10-07 on console.groq.com/docs/models.
+# Override with LLM_PRICES='{"model-id": {"input": 0.1, "output": 0.4}}' in .env.
+DEFAULT_LLM_PRICES = {
+    "openai/gpt-oss-120b": ModelPrice(input=0.15, output=0.60, cached_input=0.075),
+    "openai/gpt-oss-20b": ModelPrice(input=0.075, output=0.30, cached_input=0.037),
+}
 
 
 class Settings(BaseSettings):
@@ -47,10 +65,23 @@ class Settings(BaseSettings):
     # --- LLM (Groq) ---
     groq_api_key: SecretStr
     llm_model_primary: str = "openai/gpt-oss-120b"  # quality: SQL generation / reasoning
-    llm_model_fast: str = "openai/gpt-oss-20b"  # speed: routing, rewriting, judging
+    llm_model_fast: str = "openai/gpt-oss-20b"  # speed: explanations, routing, judging
     llm_temperature: float = 0.1
     llm_timeout_seconds: float = 60.0
-    llm_max_retries: int = 2
+    llm_max_retries: int = 2  # retries for transient errors only (network, 5xx); see llm/client.py
+    llm_reasoning_effort: ReasoningEffort = "medium"  # default when a request doesn't choose
+    # How the model is forced into our output schema: "json_schema" = constrained decoding
+    # (Groq strict mode, gpt-oss only); "function_calling" = schema sent as a tool definition.
+    llm_structured_output_method: Literal["json_schema", "function_calling"] = "json_schema"
+    llm_prices: dict[str, ModelPrice] = Field(default_factory=lambda: dict(DEFAULT_LLM_PRICES))
+
+    # --- Tracing (LangSmith) ---
+    # Off unless LANGSMITH_TRACING=true and an API key are set. When on, prompts and answers
+    # are sent to LangSmith's cloud so every LLM call can be inspected as a trace.
+    langsmith_tracing: bool = False
+    langsmith_api_key: SecretStr | None = None
+    langsmith_project: str = "sqlassist-dev"
+    langsmith_endpoint: str | None = None  # e.g. the EU region: https://eu.api.smith.langchain.com
 
     @property
     def sqlalchemy_url(self) -> URL | str:

@@ -26,6 +26,11 @@ class AppError(Exception):
         self.details = details
         super().__init__(self.message)
 
+    @property
+    def headers(self) -> dict[str, str] | None:
+        """Extra HTTP response headers for this error (None = no extra headers)."""
+        return None
+
 
 class BadRequestError(AppError):
     status_code, code, message = 400, "bad_request", "The request could not be processed."
@@ -33,6 +38,10 @@ class BadRequestError(AppError):
 
 class AuthenticationError(AppError):
     status_code, code, message = 401, "not_authenticated", "Authentication required."
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"WWW-Authenticate": "Bearer"}  # required on 401 by the HTTP spec (RFC 9110)
 
 
 class PermissionDeniedError(AppError):
@@ -51,6 +60,25 @@ class LLMServiceError(AppError):
     status_code, code, message = 502, "llm_unavailable", "The language model is unavailable."
 
 
+class RateLimitedError(AppError):
+    status_code, code = 429, "rate_limited"
+    message = "The AI service is busy (rate limit reached). Please try again shortly."
+
+    def __init__(self, retry_after: int | None = None) -> None:
+        self.retry_after = retry_after
+        message = (
+            f"The AI service is busy (rate limit reached). Try again in {retry_after} s."
+            if retry_after
+            else None
+        )
+        super().__init__(message, details={"retry_after": retry_after})
+
+    @property
+    def headers(self) -> dict[str, str] | None:
+        # Standard header: tells clients (and well-behaved retry logic) how long to wait.
+        return {"Retry-After": str(self.retry_after)} if self.retry_after else None
+
+
 class DatabaseUnavailableError(AppError):
     status_code, code, message = 503, "database_unavailable", "The database is unavailable."
 
@@ -63,8 +91,7 @@ def _envelope(status: int, code: str, message: str, details: Any = None, headers
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
-        return _envelope(exc.status_code, exc.code, exc.message, exc.details, headers)
+        return _envelope(exc.status_code, exc.code, exc.message, exc.details, exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
