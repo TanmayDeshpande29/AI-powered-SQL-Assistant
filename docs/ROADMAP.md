@@ -34,6 +34,14 @@ Every phase follows the same loop:
 | 2026-10-08 | **Prompt stuffing with a character budget** as the baseline | measurable starting point before RAG; truncation is reported to the user | retrieval right away (Phases 3–4 need this baseline to beat) |
 | 2026-10-08 | **Schema as data in the human message** (`<schema>` tags), rules in the system message; prompts v3 | user-supplied comments could contain instructions; roles keep data and instructions apart | schema in the system prompt |
 | 2026-10-08 | **Schema-reference validation separate from syntax** (`schema_issues`, `valid` unchanged) | "valid SQL that names a missing column" is two facts; the UI shows both | mark such SQL invalid |
+| 2026-10-12 | **fastembed (ONNX Runtime)** for Hugging Face models: `BAAI/bge-small-en-v1.5` (dense, 384-d) + `Qdrant/bm25` (sparse) | same HF models, CPU-only, no PyTorch (~2 GB), BM25 included; 4–11 ms per query | sentence-transformers (needs torch), HF Inference API (network + rate limits per embedding) |
+| 2026-10-12 | **One Qdrant collection for all users**, `user_id` tenant index + mandatory `user_id`/`schema_id` filter inside every search | Qdrant's recommended multi-tenancy; collection-per-tenant doesn't scale | collection per user / per schema |
+| 2026-10-12 | **Named vectors**: `dense` (cosine) + `bm25` (sparse, `Modifier.IDF`) on the same point | one point per table serves both methods; Phase 4 fuses them in one query | two collections; client-side BM25 |
+| 2026-10-12 | **Point id = table id**, PostgreSQL is the source of truth, Qdrant a derived index | idempotent upserts, rebuildable index, search results joined back to the DB | separate ids + mapping table |
+| 2026-10-12 | **Incremental indexing with fingerprints** (`enrichment_hash`, `index_hash`) | re-runs after every upload cost only what changed (unchanged: 0.24 s, $0) | re-embed everything each time |
+| 2026-10-12 | **LLM document expansion** (description + synonyms per table, fast model, batched), degrading gracefully on rate limits | terse names (`ord_hdr`, `mthd`) carry no meaning; measured: synonyms make "deliveries" find `shpmt` | embed raw DDL only |
+| 2026-10-12 | **Qdrant location by config**: embedded folder (dev, zero setup), Docker, or Qdrant Cloud | Docker isn't always running; the user already had a Qdrant Cloud cluster | Docker only |
+| 2026-10-12 | **Phase 3 search = one method at a time** (dense or BM25), shown side by side | learn each method's behaviour before fusing; Phase 4 adds RRF, reranking, FK expansion | hybrid right away |
 
 ## Phases
 
@@ -69,12 +77,14 @@ Every phase follows the same loop:
 - 74 tests; verified live (paste, file, screenshot, grounded vs ungrounded generation).
 - Details: [phases/phase-2-schema-ingestion.md](phases/phase-2-schema-ingestion.md)
 
-### Phase 3: Embeddings + Qdrant
-- Table cards (one chunk per table) with LLM-written descriptions and synonyms.
-- Hugging Face embedding model (start with `BAAI/bge-small-en-v1.5`, 384-d); sparse BM25 vectors.
-- Qdrant collection with tenant-indexed `user_id` / `schema_id` payload (workspace later).
-- Re-embed a schema's tables when an upload changes them (hook into the ingestion job).
-- **Learn:** embeddings, similarity metrics, HNSW, payload filtering, multitenancy.
+### Phase 3: Embeddings + Qdrant ✅ (2026-10-12)
+- One search document per table (structure-aware chunking) with LLM-written descriptions and synonyms (document expansion, graceful degradation).
+- Hugging Face models via fastembed/ONNX: `BAAI/bge-small-en-v1.5` (dense, 384-d) + `Qdrant/bm25` (sparse, IDF in Qdrant).
+- Qdrant (embedded, Docker or Cloud): one collection, named dense + sparse vectors, tenant-indexed `user_id`, `schema_id` filter in every search.
+- Incremental indexing after every upload (fingerprints), rebuild endpoint, deletes propagated (table, schema, account), retry on network errors.
+- Search API (dense or BM25) + search playground UI; migration 4.
+- 84 tests; verified live against Qdrant Cloud with real models and Groq enrichment.
+- Details: [phases/phase-3-embeddings-qdrant.md](phases/phase-3-embeddings-qdrant.md)
 
 ### Phase 4: Retrieval
 - BM25-only, dense-only, hybrid (RRF), each measurable on its own.

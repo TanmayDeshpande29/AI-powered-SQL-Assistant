@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react"
 import { api } from "./lib/api"
+import SchemaSearchPanel, { IndexStatusBar } from "./components/SchemaSearch"
 import { SQL_DIALECTS } from "./lib/dialects"
 import { formatBytes, formatCost, formatTime, plural } from "./lib/format"
 
@@ -42,6 +43,7 @@ import { formatBytes, formatCost, formatTime, plural } from "./lib/format"
 //   3. browse the extracted tables, then use them in the Query Builder.
 
 const BUSY = new Set(["pending", "processing"])
+const INDEX_BUSY = new Set(["pending", "indexing"]) // the search index job (Phase 3)
 const POLL_MS = 1500
 
 const SOURCE_TABS = [
@@ -495,6 +497,20 @@ function TableCard({ table, tablesById, onDelete }) {
             {table.name}
           </h4>
           {table.comment && <p className="text-xs text-gray-400 mt-0.5">{table.comment}</p>}
+          {table.description && (
+            <p className="text-xs text-gray-300 mt-1" title="Written by the LLM for the search index">
+              {table.description}
+            </p>
+          )}
+          {table.synonyms.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5" title="Synonyms indexed for search">
+              {table.synonyms.map((word) => (
+                <span key={word} className="text-[10px] px-1.5 py-px rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                  {word}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {table.inferred && (
           <span
@@ -651,7 +667,8 @@ export default function DatabaseSetupPage() {
   const paramId = params.get("schema")
   const selectedId = schemas.some((s) => s.id === paramId) ? paramId : (schemas[0]?.id ?? null)
   const shown = detail?.id === selectedId ? detail : null
-  const busy = sources.some((s) => BUSY.has(s.status))
+  // Poll while an upload is being processed OR the search index is being (re)built.
+  const busy = sources.some((s) => BUSY.has(s.status)) || INDEX_BUSY.has(detail?.index_status)
   const reload = () => setReloadKey((k) => k + 1)
 
   const sidebarItems = [
@@ -741,6 +758,15 @@ export default function DatabaseSetupPage() {
       setDetail(null)
       setSources([])
       setParams({})
+    } catch (err) {
+      setDetailError(err.message)
+    }
+  }
+
+  const handleRebuildIndex = async () => {
+    try {
+      await api.reindexSchema(shown.id) // 202: the job runs in the background
+      reload() // shows "pending", then polling follows the job
     } catch (err) {
       setDetailError(err.message)
     }
@@ -877,6 +903,7 @@ export default function DatabaseSetupPage() {
                       {plural(shown.table_count, "table")} · {plural(shown.column_count, "column")} · updated{" "}
                       {formatTime(shown.updated_at)}
                     </p>
+                    <IndexStatusBar schema={shown} onRebuild={handleRebuildIndex} />
                   </div>
                   <div className="flex items-center gap-2">
                     {shown.table_count > 0 ? (
@@ -922,6 +949,10 @@ export default function DatabaseSetupPage() {
                   <AddSourcePanel key={shown.id} schemaId={shown.id} onUploaded={handleUploaded} />
                   <SourceList sources={sources} />
                 </div>
+
+                {shown.table_count > 0 && (
+                  <SchemaSearchPanel key={`search-${shown.id}`} schemaId={shown.id} indexStatus={shown.index_status} />
+                )}
 
                 <TableExplorer key={`tables-${shown.id}`} tables={shown.tables} onDeleteTable={handleDeleteTable} />
               </>

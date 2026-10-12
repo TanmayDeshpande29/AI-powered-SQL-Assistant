@@ -243,6 +243,11 @@ export const api = {
     form.append("file", file) // a .sql/.txt file or a PNG/JPEG/WebP screenshot
     return request(`/schemas/${id}/sources/file`, { method: "POST", body: form })
   },
+  // search index (Phase 3): rebuilt in the background -> poll the schema's index_status
+  reindexSchema: (id) => request(`/schemas/${id}/index`, { method: "POST" }),
+  // mode: "dense" (meaning) | "sparse" (BM25 keywords)
+  searchSchema: (id, { q, mode = "dense", limit = 5 }) =>
+    request(`/schemas/${id}/search?${new URLSearchParams({ q, mode, limit })}`),
 
   // history
   listHistory: ({ limit = 20, offset = 0 } = {}) => request(`/history?limit=${limit}&offset=${offset}`),

@@ -55,7 +55,7 @@
       notebook, you should be able to draw its diagram from memory.</p>
     </div>
   </div>
-  <div class="cover-meta">Volume 1 · Phase 2 edition · October 2026<br>repo: github.com/TanmayDeshpande29/AI-powered-SQL-Assistant</div>
+  <div class="cover-meta">Volume 1 · Phase 3 edition · October 2026<br>repo: github.com/TanmayDeshpande29/AI-powered-SQL-Assistant</div>
 </section>
 
 <!-- ============================ CONTENTS ============================ -->
@@ -107,12 +107,12 @@
     d.line(30, 72, 655, 72, { width: 2 })
     labels.forEach((label, i) => {
       const x = 42 + i * 67
-      const fill = i <= 2 ? "green" : i === 3 ? "orange" : "white"
+      const fill = i <= 3 ? "green" : i === 4 ? "orange" : "white"
       d.circle(x, 72, 34, { fill, label: String(i), size: 19, font: "title", fillStyle: "solid" })
       d.text(x, i % 2 === 0 ? 118 : 26, label, { size: 14 })
     })
-    d.text(109, 145, "✓ done", { size: 15, color: "green" })
-    d.text(243, 145, "next", { size: 15, color: "orange" })
+    d.text(142, 145, "✓ done", { size: 15, color: "green" })
+    d.text(310, 145, "next", { size: 15, color: "orange" })
   })
   </script>
   <div class="cols">
@@ -136,7 +136,7 @@
     d.box(190, 135, 145, 64, "auth + JWT ✓", { fill: "green", size: 15, sub: "users · tokens" })
     d.box(350, 135, 145, 64, "SQL + history ✓", { fill: "green", size: 15, sub: "generate · assist" })
     const qapi = d.box(510, 135, 145, 64, "query API", { dashed: true, fill: "purple", size: 15, sub: "agent runs" })
-    const worker = d.box(15, 262, 190, 84, "ingestion job ✓", { fill: "green", size: 16, sub: "parse ✓ → chunk → embed\n(embed: phase 3)" })
+    const worker = d.box(15, 262, 190, 84, "ingestion job ✓", { fill: "green", size: 16, sub: "parse → describe →\nembed → upsert" })
     const team = d.box(222, 262, 235, 84, "LangGraph agent team", { dashed: true, fill: "purple", size: 16, sub: "router · retriever · generator\nvalidator · safety · explainer" })
     const mcp = d.box(472, 262, 98, 84, "MCP\nserver", { dashed: true, fill: "yellow", size: 16 })
     const host = d.box(585, 262, 88, 84, "Claude\nDesktop /\nCursor", { dashed: true, size: 14 })
@@ -145,8 +145,8 @@
     d.arrow([457, 304], [472, 304], { both: true })
     d.arrow([585, 304], [570, 304])
     const pg = d.box(15, 400, 120, 92, "PostgreSQL ✓", { shape: "db", fill: "green", size: 16, sub: "users · history\nschema metadata" })
-    const hf = d.box(150, 400, 120, 80, "Hugging Face", { shape: "ellipse", dashed: true, fill: "blue", size: 15, sub: "embeddings\nreranker" })
-    const qd = d.box(285, 400, 112, 92, "Qdrant", { shape: "db", dashed: true, fill: "orange", size: 16, sub: "vectors +\nBM25 sparse" })
+    const hf = d.box(150, 400, 120, 80, "Hugging Face ✓", { shape: "ellipse", fill: "green", size: 15, sub: "bge-small · BM25\n(local, ONNX)" })
+    const qd = d.box(285, 400, 112, 92, "Qdrant ✓", { shape: "db", fill: "green", size: 16, sub: "dense +\nBM25 sparse" })
     const rd = d.box(412, 400, 105, 92, "Redis", { shape: "db", dashed: true, fill: "pink", size: 16, sub: "queue · cache\nrate limits" })
     const gq = d.box(532, 400, 140, 84, "Groq LLMs ✓", { shape: "cloud", fill: "purple", size: 16, sub: "gpt-oss · qwen vision" })
     d.path([[15, 170], [6, 170], [6, 446], [15, 446]], { color: "green" })
@@ -157,7 +157,7 @@
     d.arrow([420, 346], [590, 405], { label: "LLM calls", labelOffset: [10, -10], size: 14 })
     d.arrow([470, 218], [470, 400], { dashed: true })
     d.box(20, 515, 30, 22, null, { fill: "green" })
-    d.text(58, 526, "built (phases 0–2)", { anchor: "start", size: 16 })
+    d.text(58, 526, "built (phases 0–3)", { anchor: "start", size: 16 })
     d.box(220, 515, 30, 22, null, { dashed: true })
     d.text(258, 526, "coming in later phases", { anchor: "start", size: 16 })
     d.text(470, 526, "(dashed arrow = cache / rate limit)", { anchor: "start", size: 14, color: "gray" })
@@ -168,7 +168,7 @@
     <tr><td><b>PostgreSQL</b></td><td>source of truth: users, query history, uploaded schema metadata, eval results</td></tr>
     <tr><td><b>Qdrant</b></td><td>vector database: embeddings of schema “table cards” for semantic + keyword search</td></tr>
     <tr><td><b>Groq</b></td><td>runs the LLMs (gpt-oss for text, qwen for screenshots) very fast on custom LPU chips; free tier with rate limits</td></tr>
-    <tr><td><b>Hugging Face</b></td><td>open embedding + reranker models (run locally in our worker)</td></tr>
+    <tr><td><b>Hugging Face</b></td><td>open embedding models (bge-small, BM25) run locally through ONNX Runtime (fastembed); a reranker comes in phase 4</td></tr>
     <tr><td><b>LangGraph</b></td><td>orchestrates the agent team as a state graph (loops, branches, memory, human approval)</td></tr>
     <tr><td><b>MCP server</b></td><td>exposes our tools so <i>other</i> AI apps (Claude Desktop, Cursor) can use SQLAssist</td></tr>
   </table>
@@ -1304,7 +1304,7 @@ data: {"output": "…", "usage": {…}}</div>
 </section>
 
 <section class="page" data-toc="6 · RAG" data-toc-level="chapter" data-status="next">
-  <div class="page-head"><span>6 · RAG</span><span class="stamp next">INGESTION ✓ · RETRIEVAL phases 3–4</span></div>
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">INDEX ✓ · RETRIEVAL phase 4</span></div>
   <h1 class="chapter"><span class="no">6</span>RAG</h1>
   <h2>Three ways to give a model new knowledge</h2>
   <table class="hand">
@@ -1338,7 +1338,7 @@ data: {"output": "…", "usage": {…}}</div>
 </section>
 
 <section class="page" data-toc="The two RAG pipelines">
-  <div class="page-head"><span>6 · RAG</span><span class="stamp next">INGESTION ✓ · RETRIEVAL phases 3–4</span></div>
+  <div class="page-head"><span>6 · RAG</span><span class="stamp next">INGESTION + INDEX ✓ · QUERY phase 4</span></div>
   <h2>Ingestion vs query pipeline</h2>
   <figure class="sketch"><svg id="d-pipes"></svg></figure>
   <script>
@@ -1732,7 +1732,7 @@ JOIN orders o ON p.order_id = o.id;</div>
 </section>
 
 <section class="page" data-toc="Chunking: schema-aware table cards">
-  <div class="page-head"><span>6 · RAG</span><span class="stamp built">CARDS ✓ phase 2 · vectors phase 3</span></div>
+  <div class="page-head"><span>6 · RAG</span><span class="stamp built">BUILT ✓ phases 2–3</span></div>
   <h2>Chunking</h2>
   <p>A <b>chunk</b> is one retrievable unit of knowledge. Too big → noisy context and a blurry embedding. Too small → meaning gets cut in half.</p>
   <table class="hand compact">
@@ -1756,24 +1756,25 @@ Synonyms: purchases, sales, transactions
 Joins: customers (customer_id), order_items (order_id)</div>
     <div class="small">
       <p><span class="red">Never split a CREATE TABLE in half</span>: a chunk holding half the columns causes exactly the hallucinations we want to stop.</p>
-      <p>Phase 2 builds the card from the parsed DDL. In phase 3 an LLM adds the <b>About</b> and <b>Synonyms</b> lines, so “purchases” finds <code>orders</code>.</p>
-      <p>Very wide tables (100+ columns) get extra column-group chunks that point back to their parent table.</p>
+      <p>Phase 2 builds the card from the parsed DDL; phase 3's LLM adds the <b>About</b> and <b>Synonyms</b> lines, so “purchases” finds <code>orders</code> (see “document expansion”).</p>
+      <p>Very wide tables are trimmed to the model's 512-token window (~2,000 characters); column-group chunks would be the next step.</p>
     </div>
   </div>
   <h3>Payload (metadata) travels with every chunk</h3>
-  <div class="code">{ "user_id": "u_42", "schema_id": "s_7", "table": "orders",
+  <div class="code">{ "user_id": "u_42", "schema_id": "s_7", "table_id": "9b1e…", "key": "sales.orders",
   "columns": ["id", "customer_id", "total_amount", "status", "created_at"],
-  "fk_targets": ["customers", "order_items"], "dialect": "postgres" }</div>
+  "references": ["sales.customers"], "referenced_by": ["sales.order_items"],
+  "document": "Table: sales.orders\nAbout: …" }</div>
   <ul class="arrows small">
     <li><b>filter</b>: search only the user's own schema, or only the tables they picked in the UI</li>
     <li><b>explain</b>: show the user which tables the answer was built from</li>
-    <li><b>expand</b>: follow <code>fk_targets</code> to pull in join tables (FK-graph expansion)</li>
+    <li><b>expand</b>: follow <code>references</code> / <code>referenced_by</code> to pull in join tables (FK-graph expansion, phase 4)</li>
   </ul>
   <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
 </section>
 
 <section class="page" data-toc="Embeddings & similarity">
-  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 3</span></div>
+  <div class="page-head"><span>6 · RAG</span><span class="stamp built">BUILT ✓ phase 3</span></div>
   <h2>Embeddings: meaning as coordinates</h2>
   <figure class="sketch"><svg id="d-embed"></svg></figure>
   <script>
@@ -1815,7 +1816,7 @@ Joins: customers (customer_id), order_items (order_id)</div>
     <ul class="arrows small">
       <li><b>Cosine similarity</b> compares directions: 1 = same meaning, 0 = unrelated, −1 = opposite. Length doesn't matter.</li>
       <li><b>Bi-encoder</b>: query and documents are embedded <i>separately</i> → document vectors are computed once at ingestion; search is just math.</li>
-      <li>Models come from the <b>Hugging Face Hub</b> (sentence-transformers) and run locally, free.</li>
+      <li>Models come from the <b>Hugging Face Hub</b> and run locally, free. We use <b>fastembed</b>: the same models exported to ONNX, no PyTorch.</li>
     </ul>
     <div>
       <div class="warn small">Use the <b>same model</b> for documents and queries. Changing the model = re-embed everything (vectors from different models live in different spaces).</div>
@@ -1826,19 +1827,19 @@ Joins: customers (customer_id), order_items (order_id)</div>
 </section>
 
 <section class="page" data-toc="Vector databases: Qdrant & HNSW">
-  <div class="page-head"><span>6 · RAG</span><span class="stamp next">COMING · phase 3</span></div>
+  <div class="page-head"><span>6 · RAG</span><span class="stamp built">BUILT ✓ phase 3</span></div>
   <h2>Qdrant: a database for vectors</h2>
   <figure class="sketch"><svg id="d-qdrant"></svg></figure>
   <script>
   sketch("d-qdrant", 680, 250, (d) => {
     d.box(4, 8, 410, 236, null, { dashed: true })
-    d.text(209, 26, "collection: schema_chunks", { size: 19, font: "title", weight: 700 })
-    const pts = [["orders", "w_42"], ["customers", "w_42"], ["tickets", "w_77"]]
-    pts.forEach(([t, w], i) => {
-      d.box(18, 46 + i * 64, 382, 54, `point · id: 7f3a…  vector: [0.02, −0.11, …]\npayload: {workspace_id: "${w}", table: "${t}"}`, { fill: i === 2 ? "gray" : "blue", size: 14 })
+    d.text(209, 26, "collection: schema_tables", { size: 19, font: "title", weight: 700 })
+    const pts = [["orders", "u_42"], ["customers", "u_42"], ["tickets", "u_77"]]
+    pts.forEach(([t, u], i) => {
+      d.box(18, 46 + i * 64, 382, 54, `point · id = table id · dense + bm25 vectors\npayload: {user_id: "${u}", table: "${t}"}`, { fill: i === 2 ? "gray" : "blue", size: 14 })
     })
     const qv = d.box(450, 12, 225, 48, "query vector", { shape: "ellipse", fill: "yellow", size: 16 })
-    const s = d.box(450, 95, 225, 70, "HNSW search", { fill: "green", size: 17, sub: "+ filter workspace_id = w_42" })
+    const s = d.box(450, 95, 225, 70, "HNSW search", { fill: "green", size: 17, sub: "+ filter user_id = u_42\nAND schema_id" })
     const r = d.box(450, 196, 225, 48, "top-k points + scores", { fill: "orange", size: 16 })
     d.arrow(qv.bottom, s.top)
     d.arrow(s.bottom, r.top)
@@ -1847,7 +1848,7 @@ Joins: customers (customer_id), order_items (order_id)</div>
   </script>
   <ul class="arrows small">
     <li><b>Point</b> = id + vector + <b>payload</b> (JSON metadata). <b>Collection</b> = a set of points with the same vector size and distance metric.</li>
-    <li><b>Multitenancy</b>: one collection for all customers + an indexed <code>workspace_id</code> payload field marked as tenant key. <span class="red">Forget the filter = one customer sees another's schema.</span></li>
+    <li><b>Multitenancy</b>: one collection for all users + an indexed <code>user_id</code> payload field marked <code>is_tenant</code>. The filter runs <i>inside</i> the search. <span class="red">Forget the filter = one customer sees another's schema.</span></li>
     <li>Qdrant stores <b>sparse vectors</b> (BM25-style keyword weights) next to dense ones → hybrid search with server-side RRF fusion.</li>
   </ul>
   <h2>HNSW: how search stays fast</h2>
@@ -1876,6 +1877,172 @@ Joins: customers (customer_id), order_items (order_id)</div>
   <div class="cols">
     <div class="small"><b>HNSW</b> (Hierarchical Navigable Small World): a layered graph. Start at the sparse top layer, greedily hop toward the query, drop a layer, repeat. It's <b>ANN</b> (approximate nearest neighbour): it may miss the exact best match rarely, but it's orders of magnitude faster than comparing against every vector.</div>
     <div class="qa small"><div class="q">Why Qdrant instead of FAISS?</div><div class="a">FAISS is a <i>library</i>: an in-process index; you build persistence, filtering, multi-tenancy and an API yourself. Qdrant is a <i>database server</i>: REST/gRPC API, payload filters, snapshots, sparse+dense hybrid, horizontal scaling.</div></div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Dense vs sparse search, measured">
+  <div class="page-head"><span>6 · RAG · search index</span><span class="stamp built">BUILT ✓ phase 3</span></div>
+  <h2>Two vectors for every table</h2>
+  <figure class="sketch"><svg id="d-dvs"></svg></figure>
+  <script>
+  sketch("d-dvs", 680, 205, (d) => {
+    const doc = d.box(4, 30, 176, 110, "Table: shpmt\nAbout: Each row is a\nshipment…\nSynonyms: shipment,\ndelivery, dispatch", { fill: "gray", size: 13.5, font: "bold" })
+    const dense = d.box(300, 8, 376, 64, "[0.021, −0.113, 0.087, … ]", { fill: "blue", size: 16, font: "bold", sub: "dense: 384 floats, all non-zero = MEANING" })
+    const sparse = d.box(300, 104, 376, 64, "{ deliveri: 1, shipment: 1, carrier: 1, … }", { fill: "orange", size: 15, font: "bold", sub: "sparse: only the words present = KEYWORDS" })
+    d.arrow([180, 66], dense.left, { label: "bge-small", size: 14, labelOffset: [-6, -12] })
+    d.arrow([180, 104], sparse.left, { label: "BM25 + stemmer", size: 14, labelOffset: [-8, 16] })
+    d.text(488, 192, "IDF (rare words weigh more) is applied by Qdrant at search time", { size: 14, color: "gray" })
+  })
+  </script>
+  <div class="cols">
+    <div class="small">
+      <p><b>BM25</b> scores a document by the query words it contains:</p>
+      <div class="code">score = Σ IDF(w) · tf·(k1+1) / (tf + k1·(1 − b + b·len/avg))</div>
+      <p>rare words count more (<b>IDF</b>), repeats help less and less (<b>k1</b>), long documents are normalized (<b>b</b>). <b>Stemming</b> maps deliveries / delivery → “deliveri”.</p>
+    </div>
+    <div class="qa small"><div class="q">When does keyword search beat embeddings?</div><div class="a">Exact identifiers, codes and rare terms (<code>sku</code>, <code>iban</code>, error codes): embeddings blur them. Embeddings win on paraphrases and synonyms. They fail in opposite ways, so phase 4 combines them.</div></div>
+  </div>
+  <h3>Measured on 8 tables with terse names (top 3)</h3>
+  <table class="hand compact tiny">
+    <tr><th>Question</th><th>Dense (cosine)</th><th>BM25</th></tr>
+    <tr><td>total revenue per customer</td><td><b>cust</b> .631 · ord_hdr .620 · prod .610</td><td><b>ord_hdr</b> 4.90 · pmt 3.81 · cust 2.57</td></tr>
+    <tr><td>which products are running out of stock</td><td><b>prod</b> .635 · ord_line · ord_hdr</td><td><b>prod</b> 5.51 · ord_line 2.02</td></tr>
+    <tr><td>how long do deliveries take</td><td><b>shpmt</b> .586 · ord_hdr · cust</td><td><b>shpmt</b> 2.99 (only hit)</td></tr>
+    <tr><td>average salary by department</td><td><b>emp</b> .658 · dept .642 · pmt</td><td><b>emp</b> 5.04 · dept 2.46</td></tr>
+    <tr><td>credit card payments</td><td><b>pmt</b> .599 · ord_hdr · cust</td><td><b>pmt</b> 3.72 (only hit)</td></tr>
+    <tr><td>sku</td><td><b>prod</b> .714 · ord_hdr · ord_line</td><td><b>prod</b> 3.69 (only hit)</td></tr>
+  </table>
+  <ul class="arrows small">
+    <li><b>Dense always returns k results</b> (cosine is practically never 0) and its scores bunch up (0.50–0.71): the 5th hit is often noise → needs a cut-off or a reranker.</li>
+    <li><b>BM25 returns only tables that contain the words</b>, with spread-out scores; blind to meaning without synonyms.</li>
+    <li>They <span class="hl">disagree on “revenue per customer”</span>, and both are half right (the SQL needs cust <i>and</i> ord_hdr) → phase 4 fuses the rankings (RRF) and follows foreign keys.</li>
+  </ul>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Search documents & document expansion">
+  <div class="page-head"><span>6 · RAG · search index</span><span class="stamp built">BUILT ✓ phase 3</span></div>
+  <h2>What we embed for each table</h2>
+  <div class="cols wide-left">
+    <div class="code">Table: pmt
+About: Each row represents a payment, recording the
+  method, amount, and timestamp for reconciliation…
+Synonyms: payment, transaction, settlement, revenue
+Columns: id, ord_id (ord id), mthd, amt, paid_at (paid at)
+References: ord_hdr</div>
+    <ul class="arrows small">
+      <li><b>meaning first</b>: name, LLM description, comment, synonyms</li>
+      <li>relationships <b>both ways</b> (References / Referenced by)</li>
+      <li><b>no data types</b>: little meaning, wasted tokens</li>
+      <li>max <b>512 tokens</b> (~2,000 chars): bge-small silently cuts the rest</li>
+    </ul>
+  </div>
+  <div class="warn small"><b>Probe before you build:</b> the BM25 tokenizer keeps <code>customer_id</code> and <code>unitPrice</code> as <b>one token</b> each, so the word “customer” never matched them. Fix: spell identifiers out, <code>customer_id (customer id)</code>.</div>
+  <table class="hand compact tiny">
+    <tr><th>text given to BM25</th><th>tokens</th></tr>
+    <tr><td><code>customer_id unit_price</code></td><td>2 (useless for “customer”)</td></tr>
+    <tr><td><code>customer id unit price</code></td><td>4: customer · id · unit · price</td></tr>
+    <tr><td><code>customers ordered orders</code></td><td>2: custom · order (stemmed)</td></tr>
+  </table>
+  <h2>Document expansion with an LLM</h2>
+  <figure class="sketch"><svg id="d-expand"></svg></figure>
+  <script>
+  sketch("d-expand", 680, 160, (d) => {
+    ;["cust", "ord_hdr", "pmt", "shpmt"].forEach((t, i) => d.box(4 + i * 10, 14 + i * 12, 120, 54, `TABLE ${t}\n  id …`, { fill: "white", fillStyle: "solid", size: 13.5, font: "bold" }))
+    d.text(84, 128, "8 table cards / call", { size: 14, color: "gray" })
+    const llm = d.box(200, 30, 150, 80, "gpt-oss-20b", { shape: "cloud", fill: "purple", size: 16, sub: "low effort · strict JSON" })
+    const out = d.box(410, 14, 266, 112, "pmt → “Each row represents a\npayment…”\nsynonyms: payment, settlement,\nrevenue", { shape: "note", size: 13.5 })
+    d.arrow([164, 70], [210, 70])
+    d.arrow([346, 70], out.left)
+    d.text(540, 146, "8 tables: one call, $0.00017", { size: 14.5, color: "green" })
+  })
+  </script>
+  <div class="cols">
+    <div class="small">Terse names (<code>ord_hdr</code>, <code>mthd</code>) carry no meaning. A sentence + synonyms adds the words people actually type: <b>“deliveries” finds <code>shpmt</code></b> only because the LLM wrote “delivery”.</div>
+    <div class="tip small"><b>Degrade, don't fail:</b> if the LLM is rate-limited, tables are indexed by name and columns anyway; the next run adds the missing descriptions.</div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Incremental indexing">
+  <div class="page-head"><span>6 · RAG · search index</span><span class="stamp built">BUILT ✓ phase 3</span></div>
+  <h2>Keeping the index in sync with the database</h2>
+  <figure class="sketch"><svg id="d-incr"></svg></figure>
+  <script>
+  sketch("d-incr", 680, 250, (d) => {
+    const pg = d.box(4, 22, 110, 70, "tables", { shape: "db", fill: "green", size: 16, sub: "PostgreSQL" })
+    const q1 = d.box(150, 12, 130, 90, "card\nchanged?", { shape: "diamond", fill: "yellow", size: 14.5 })
+    const desc = d.box(318, 30, 130, 54, "describe", { fill: "purple", size: 16, sub: "LLM, batches of 8" })
+    const doc = d.box(490, 30, 186, 54, "search document", { fill: "white", fillStyle: "solid", size: 16, sub: "per table" })
+    d.arrow(pg.right, q1.left)
+    d.arrow([280, 57], desc.left, { label: "yes", size: 13.5 })
+    d.arrow(desc.right, doc.left)
+    d.path([[215, 102], [215, 116], [583, 116], [583, 84]], { dashed: true, label: "no: keep description", labelAt: [400, 128], size: 13.5 })
+    const q2 = d.box(510, 146, 130, 90, "text\nchanged?", { shape: "diamond", fill: "yellow", size: 14.5 })
+    d.arrow([583, 84], [575, 146])
+    const emb = d.box(330, 166, 130, 54, "embed", { fill: "blue", size: 16, sub: "bge-small + BM25" })
+    const up = d.box(150, 166, 140, 54, "upsert", { fill: "orange", size: 16, sub: "id = table id" })
+    const pr = d.box(4, 166, 110, 54, "prune", { fill: "pink", size: 16, sub: "gone tables" })
+    d.arrow([510, 191], emb.right, { label: "yes", size: 13.5 })
+    d.arrow(emb.left, up.right)
+    d.arrow(up.left, pr.right)
+    d.text(600, 246, "no: skip (0 cost)", { size: 13.5, color: "green" })
+  })
+  </script>
+  <table class="hand compact">
+    <tr><th>Run (8 tables, live)</th><th>described</th><th>embedded</th><th>time</th></tr>
+    <tr><td>first index</td><td>8 (1 LLM call)</td><td>8</td><td>4.5 s</td></tr>
+    <tr><td>rebuild, nothing changed</td><td>0</td><td>0 (8 unchanged)</td><td><b>0.24 s</b></td></tr>
+    <tr><td>upload <code>payments</code> (references orders)</td><td>1</td><td>2: payments + orders (“Referenced by” changed)</td><td>–</td></tr>
+  </table>
+  <div class="cols">
+    <ul class="arrows small">
+      <li><b>Fingerprint</b> = sha256(prompt version + card) and sha256(format version + models + document). Change any part → redo that step only.</li>
+      <li><b>Point id = table id</b> → upserts overwrite; running twice is harmless (idempotent).</li>
+      <li><b>PostgreSQL is the source of truth</b>, Qdrant a derived index: rebuildable any time; search results are joined back to the DB.</li>
+    </ul>
+    <div>
+      <div class="warn small"><b>No foreign keys across systems.</b> Deleting a table, a schema or a whole account cascades in PostgreSQL, but the vectors must be deleted <i>explicitly</i>, or deleted users' schemas stay in the vector DB.</div>
+      <div class="qa small"><div class="q">What makes the job safe to retry after a crash?</div><div class="a">Idempotent upserts by id, fingerprints instead of “done” flags, a commit per batch, one lock per schema. Whatever state a crash leaves, the next run converges.</div></div>
+    </div>
+  </div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Running models locally & where Qdrant runs">
+  <div class="page-head"><span>6 · RAG · search index</span><span class="stamp built">BUILT ✓ phase 3</span></div>
+  <h2>Hugging Face models without PyTorch</h2>
+  <figure class="sketch"><svg id="d-onnx"></svg></figure>
+  <script>
+  sketch("d-onnx", 680, 160, (d) => {
+    const hub = d.box(4, 20, 150, 80, "Hugging Face Hub", { shape: "cloud", fill: "yellow", size: 15, sub: "bge-small ONNX\n67 MB" })
+    const cache = d.box(200, 26, 120, 76, ".cache/fastembed", { shape: "db", fill: "gray", size: 14 })
+    const ort = d.box(366, 26, 140, 70, "ONNX Runtime", { fill: "blue", size: 16, sub: "on the CPU" })
+    const out = d.box(546, 26, 130, 70, "384 floats", { fill: "green", size: 16, sub: "~6 ms / query" })
+    d.arrow([150, 60], cache.left, { label: "once", size: 13.5 })
+    d.arrow(cache.right, ort.left, { label: "load", size: 13.5 })
+    d.arrow(ort.right, out.left)
+    d.text(340, 140, "same weights as the PyTorch model · install ~100 MB instead of ~2 GB · no GPU, no API key", { size: 14, color: "gray" })
+  })
+  </script>
+  <table class="hand compact tiny">
+    <tr><th>Measured</th><th>time</th></tr>
+    <tr><td>very first run: download both models + load</td><td>49 s (once)</td></tr>
+    <tr><td>after a restart: load from disk (lazy, on first use)</td><td>~1.4 s</td></tr>
+    <tr><td>embed one question (dense + BM25)</td><td>4–11 ms</td></tr>
+    <tr><td>Qdrant Cloud search (network round trip)</td><td>~250 ms</td></tr>
+  </table>
+  <h2>Where Qdrant runs</h2>
+  <table class="hand compact">
+    <tr><th>Mode</th><th>Setup</th><th>Search</th><th>Use</th></tr>
+    <tr><td><b>embedded</b> (<code>path=.qdrant</code>)</td><td>none: runs inside our process</td><td>exact (brute force), no payload indexes</td><td>dev, tests (<code>":memory:"</code>)</td></tr>
+    <tr><td><b>server</b> (Docker, <code>:6333</code>)</td><td>one container</td><td>HNSW + payload / tenant indexes</td><td>production, self-hosted</td></tr>
+    <tr><td><b>Qdrant Cloud</b> ✓ ours</td><td>URL + API key</td><td>HNSW, managed, ~250 ms away</td><td>no ops, free tier</td></tr>
+  </table>
+  <div class="cols">
+    <div class="warn small">Embedded mode <b>locks its folder</b>: only one process can open it. Stop the API before running a script against the same <code>.qdrant</code> folder.</div>
+    <div class="qa small"><div class="q">Exact vs approximate (ANN) search?</div><div class="a">Exact compares the query with every vector: perfect recall, fine for thousands. HNSW (ANN) skips most comparisons: tiny recall loss, needed for millions. Same API for both.</div></div>
   </div>
   <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
 </section>
@@ -2573,9 +2740,9 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
 </section>
 
 <!-- ============================ GLOSSARY ============================ -->
-<section class="page" data-toc="Glossary A–G" data-toc-level="chapter" data-status="overview">
+<section class="page" data-toc="Glossary A–H" data-toc-level="chapter" data-status="overview">
   <div class="page-head"><span>glossary</span><span>quick definitions</span></div>
-  <h1 class="chapter">Glossary · A–G</h1>
+  <h1 class="chapter">Glossary · A–H</h1>
   <div class="glossary">
     <p><b>Accepted (HTTP 202)</b>: “got it, still working”; the client polls the returned job resource for the result.</p>
     <p><b>Agent</b>: LLM + tools + state + loop; decides its next step itself.</p>
@@ -2600,17 +2767,20 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>Cross-encoder</b>: reads query + document together to score relevance; used for reranking.</p>
     <p><b>DDL</b>: data definition language: <code>CREATE</code> / <code>ALTER</code> / <code>DROP</code> statements that define a schema.</p>
     <p><b>Dependency injection</b>: a function declares needs; the framework provides them.</p>
+    <p><b>Document expansion</b>: adding text to documents before indexing (our LLM descriptions + synonyms) so queries match.</p>
     <p><b>Embedding</b>: vector of numbers representing meaning; similar meaning → close vectors.</p>
     <p><b>Event loop</b>: single thread that runs async tasks, switching at <code>await</code> points.</p>
     <p><b>Execution accuracy (EX)</b>: predicted SQL returns the same rows as the gold SQL.</p>
     <p><b>Faithfulness</b>: answer is fully supported by the retrieved context.</p>
     <p><b>Fallback</b>: switch to an alternative (e.g. another model) when the first choice fails.</p>
+    <p><b>fastembed</b>: Qdrant's library that runs Hugging Face embedding models through ONNX Runtime, without PyTorch.</p>
     <p><b>FastMCP</b>: Python framework for building MCP servers with decorators.</p>
     <p><b>Fine-tuning</b>: further training a model's weights on your examples.</p>
     <p><b>Golden dataset</b>: hand-checked questions with known correct answers for evaluation.</p>
     <p><b>Groq</b>: inference provider running open LLMs on custom LPU hardware.</p>
     <p><b>Grounding</b>: giving the model the real facts (our schema) and requiring it to stay within them.</p>
     <p><b>Guardrail</b>: check that blocks or fixes unsafe inputs/outputs around an LLM.</p>
+    <p><b>Hallucination</b>: fluent but false model output.</p>
   </div>
   <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
 </section>
@@ -2619,12 +2789,12 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
   <div class="page-head"><span>glossary</span><span>quick definitions</span></div>
   <h1 class="chapter">Glossary · H–P</h1>
   <div class="glossary">
-    <p><b>Hallucination</b>: fluent but false model output.</p>
     <p><b>HITL</b>: human-in-the-loop; the graph pauses for a human decision, then resumes.</p>
     <p><b>HNSW</b>: layered proximity graph used for fast ANN vector search.</p>
     <p><b>Hybrid search</b>: keyword (BM25) + semantic (dense) search, fused (e.g. RRF).</p>
     <p><b>HyDE</b>: embed a hypothetical answer instead of the question to improve retrieval.</p>
     <p><b>Idempotent</b>: repeating an operation has the same effect as doing it once (PUT, DELETE, our uploads).</p>
+    <p><b>IDF</b>: inverse document frequency: rare words weigh more in keyword search (log of N / documents containing the word).</p>
     <p><b>IDOR</b>: insecure direct object reference; accessing others' data by changing an id.</p>
     <p><b>Jitter</b>: randomness added to retry delays so clients don't retry in sync.</p>
     <p><b>Job queue</b>: broker (e.g. Redis) + workers that run background jobs reliably, with retries.</p>
@@ -2644,7 +2814,9 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>MRR</b>: mean reciprocal rank; average of 1 / rank of the first relevant result.</p>
     <p><b>Multimodal LLM</b>: model that takes images (or audio) as input as well as text.</p>
     <p><b>Multipart form data</b>: HTTP body format for file uploads: parts separated by a boundary string.</p>
+    <p><b>Named vectors</b>: several vectors stored on one Qdrant point under names (ours: <code>dense</code> + <code>bm25</code>).</p>
     <p><b>nDCG</b>: ranking quality metric that rewards relevant items placed higher.</p>
+    <p><b>ONNX</b>: open format for trained neural networks; ONNX Runtime executes them fast on CPU/GPU without the training framework.</p>
     <p><b>ORM</b>: object-relational mapper; Python classes ⇄ database tables.</p>
     <p><b>Payload</b>: JSON metadata stored with a vector in Qdrant; used for filtering.</p>
     <p><b>Polling</b>: the client asks again every few seconds until a job is done.</p>
@@ -2683,16 +2855,19 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
     <p><b>SSE</b>: Server-Sent Events; one HTTP response the server keeps writing events into.</p>
     <p><b>State (LangGraph)</b>: typed dict shared by all graph nodes.</p>
     <p><b>Stateless API</b>: server keeps no per-user memory between requests; easy to replicate.</p>
+    <p><b>Stemming</b>: cutting words to a common stem (deliveries, delivery → deliveri) so word forms match.</p>
     <p><b>Streamable HTTP</b>: MCP's remote transport (HTTP POST + optional SSE stream).</p>
     <p><b>Structured output</b>: the model returns data matching a schema instead of free text.</p>
     <p><b>Table card</b>: compact text description of one table (columns, keys, comments): what the model reads; our chunk.</p>
     <p><b>Temperature</b>: sampling knob; low = focused/deterministic, high = random/creative.</p>
+    <p><b>Tenant index</b>: Qdrant payload index marked <code>is_tenant</code>: co-locates and speeds up per-tenant filtered search.</p>
     <p><b>Thread offloading</b>: <code>asyncio.to_thread</code> runs blocking or CPU work off the event loop.</p>
     <p><b>Token</b>: unit of text an LLM reads and writes (≈ 4 English characters).</p>
     <p><b>Tool calling</b>: model outputs a structured function call that the app executes.</p>
     <p><b>Trace / span</b>: the tree of timed steps one request went through / one step in it.</p>
     <p><b>Transaction</b>: group of DB writes that succeed or fail together (ACID).</p>
     <p><b>TTFT</b>: time to first token; the wait before the first visible output.</p>
+    <p><b>Upsert</b>: insert, or overwrite if the id exists: makes re-indexing idempotent.</p>
     <p><b>UUID</b>: 128-bit random identifier; non-guessable primary keys.</p>
     <p><b>Uvicorn</b>: ASGI web server that runs our FastAPI app.</p>
     <p><b>Vector database</b>: database optimised for storing and searching embeddings.</p>
@@ -2848,6 +3023,54 @@ graph.invoke(Command(resume={<span class="s">"approved"</span>: True}),
   <div class="sticky pink"><b>My takeaways:</b> parse what you can, use the LLM only where you must · long work → 202 + a job row + polling ·
   design every write to be safe to repeat · <span class="hl">the model is only as good as the context we give it</span>, and stuffing everything doesn't scale.</div>
   <div class="sticky blue" style="transform:rotate(0.6deg)"><b>Next → Phase 3 (embeddings + Qdrant):</b> turn each table card into vectors with a Hugging Face model (dense) and BM25 (sparse), store them in Qdrant with the user and schema as payload, and re-embed whenever an upload changes a table.</div>
+  <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
+</section>
+
+<section class="page" data-toc="Phase journal · 3: Embeddings + Qdrant" data-toc-level="chapter" data-status="built">
+  <div class="page-head"><span>phase journal</span><span class="stamp built">DONE ✓ 2026-10-12</span></div>
+  <h1 class="chapter"><span class="no">3</span>Phase 3 · Embeddings + Qdrant</h1>
+  <div class="cols">
+    <div>
+      <h3>What we built</h3>
+      <ul class="arrows small">
+        <li><b>One search document per table</b>: names as words, LLM description + synonyms, relationships both ways</li>
+        <li><b>Hugging Face models locally</b> (fastembed / ONNX): bge-small (dense, 384-d) + BM25 (sparse)</li>
+        <li><b>Qdrant</b> (embedded, Docker or Cloud): one collection, named vectors, tenant filter in every search</li>
+        <li><b>Incremental indexing</b> after every upload (fingerprints), rebuild endpoint, deletes propagated</li>
+        <li>One <b>retry</b> for network errors (all requests idempotent); graceful degradation without the LLM</li>
+        <li>UI: index status, Rebuild, descriptions + synonyms, <b>search playground</b> (dense vs BM25)</li>
+      </ul>
+      <h3>How we verified it</h3>
+      <ul class="arrows small">
+        <li>84 pytest tests: fake embedder + a <i>real</i> in-memory Qdrant</li>
+        <li>migration 4 up / down / drift check on your PostgreSQL</li>
+        <li>live against Qdrant Cloud with real models + Groq: 6 questions, both methods</li>
+        <li>browser E2E; test account deleted → 0 points left in Qdrant</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured</h3>
+      <table class="hand compact tiny">
+        <tr><th>step</th><th>result</th></tr>
+        <tr><td>index 8 tables (cached models)</td><td>4.5 s · $0.00017</td></tr>
+        <tr><td>rebuild, nothing changed</td><td>0.24 s · $0</td></tr>
+        <tr><td>embed a question</td><td>4–11 ms</td></tr>
+        <tr><td>dense top-1 correct</td><td>6 / 6</td></tr>
+      </table>
+      <h3>Problems found &amp; fixed</h3>
+      <table class="hand compact tiny">
+        <tr><th>Problem</th><th>Lesson</th></tr>
+        <tr><td>BM25 kept customer_id as 1 token</td><td>probe the tokenizer first</td></tr>
+        <tr><td>document 9 chars over its cap</td><td>budget for your own markers</td></tr>
+        <tr><td>transient Qdrant Cloud error</td><td>retry idempotent requests once</td></tr>
+        <tr><td>“2 s” per request in the test script</td><td>localhost → IPv6 first on Windows</td></tr>
+        <tr><td>your .env already pointed to Qdrant Cloud</td><td>read the config you inherit</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="sticky pink"><b>My takeaways:</b> one table = one document, written for retrieval · dense finds meaning, BM25 finds words, and <span class="hl">they fail in opposite ways</span> ·
+  the database is the truth, the vector index is derived and rebuildable · make every indexing step idempotent and incremental.</div>
+  <div class="sticky blue" style="transform:rotate(0.6deg)"><b>Next → Phase 4 (retrieval):</b> hybrid search (dense + BM25 fused with RRF in one Qdrant query), query rewriting, foreign-key expansion, a cross-encoder reranker, and finally feeding the retrieved tables into the SQL prompt instead of the budget cut.</div>
   <div class="page-foot"><span>SQLAssist notebook</span><span class="num"></span></div>
 </section>
 

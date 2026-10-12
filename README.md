@@ -20,8 +20,8 @@
 | 0 | Foundation: Postgres, auth, LangChain LLM layer, bug fixes | ✅ done |
 | 1 | LLM layer: structured output, SQL validation, SSE streaming, tokens & cost, reasoning effort, retries & fallbacks, prompt versions, LangSmith tracing | ✅ done |
 | 2 | Schema ingestion: SQL text / `.sql` files / screenshots (vision LLM) → normalized schema, background jobs, grounded prompts, schema-aware validation, table picker | ✅ done |
-| 3 | Embeddings + Qdrant: table cards, dense + sparse vectors, multi-tenancy | ⏭️ next |
-| 4 | Retrieval: BM25, dense, hybrid (RRF), FK-graph expansion, reranking | planned |
+| 3 | Embeddings + Qdrant: one document per table, LLM descriptions + synonyms, dense (bge-small) + sparse (BM25) vectors, multi-tenant collection, incremental indexing, search playground | ✅ done |
+| 4 | Retrieval: BM25, dense, hybrid (RRF), FK-graph expansion, reranking | ⏭️ next |
 | 5 | RAG evaluation: golden set, retrieval metrics, execution accuracy, RAGAS, CI gate | planned |
 | 6 | Agents (LangGraph): router, retriever, generator, validator, safety, optimizer, explainer, memory, HITL | planned |
 | 7 | MCP server (FastMCP) exposing SQLAssist tools to Claude Desktop / Cursor | planned |
@@ -29,7 +29,7 @@
 | 9 | Ship: Dockerfiles, CI/CD, deployment | planned |
 
 The full plan, with decisions and learning goals per phase, is in [docs/ROADMAP.md](docs/ROADMAP.md).
-File-by-file explanations of each phase: [Phase 0: foundation](docs/phases/phase-0-foundation.md) · [Phase 1: LLM layer](docs/phases/phase-1-llm-layer.md) · [Phase 2: schema ingestion](docs/phases/phase-2-schema-ingestion.md).
+File-by-file explanations of each phase: [Phase 0: foundation](docs/phases/phase-0-foundation.md) · [Phase 1: LLM layer](docs/phases/phase-1-llm-layer.md) · [Phase 2: schema ingestion](docs/phases/phase-2-schema-ingestion.md) · [Phase 3: embeddings + Qdrant](docs/phases/phase-3-embeddings-qdrant.md).
 
 ---
 
@@ -50,16 +50,16 @@ flowchart TB
 
     subgraph WORK["Background & agents"]
         JOB["ingestion job (in-process)<br/>parse → normalize → merge"]:::built
-        WRK["embedding worker<br/>chunk → embed"]:::planned
+        WRK["indexing (same job)<br/>describe → embed → upsert"]:::built
         AG["LangGraph agent team<br/>router · retriever · generator<br/>validator · safety · explainer"]:::planned
         MCP["MCP server (FastMCP)"]:::planned
     end
 
     PG[("PostgreSQL<br/>users · history · schemas · tables · jobs")]:::built
-    QD[("Qdrant<br/>dense + sparse vectors")]:::planned
+    QD[("Qdrant<br/>dense + BM25 vectors<br/>one point per table")]:::built
     RD[("Redis<br/>queue · cache · rate limits")]:::planned
     GQ{{"Groq LLMs<br/>gpt-oss-120b / 20b · qwen vision"}}:::built
-    HF{{"Hugging Face<br/>embeddings · reranker"}}:::planned
+    HF{{"Hugging Face models (local, ONNX)<br/>bge-small · BM25 · reranker next"}}:::built
     HOST["Claude Desktop / Cursor"]:::planned
 
     UI -->|REST + streaming| API
@@ -69,10 +69,12 @@ flowchart TB
     ING --> JOB
     JOB --> PG
     JOB -->|screenshots| GQ
-    JOB -.-> WRK
+    JOB --> WRK
     QRY --> AG
     WRK --> HF
     WRK --> QD
+    WRK -->|descriptions| GQ
+    ING -->|search| QD
     AG --> QD
     AG --> GQ
     AG <--> MCP
@@ -91,6 +93,7 @@ flowchart LR
     S --> M["models + db<br/>ORM tables, sessions"]
     S --> L["llm<br/>model factory · retry/fallback<br/>prompts · output schemas · usage"]
     S --> T["sql_tools<br/>sqlglot: validation · DDL extraction<br/>schema catalog"]
+    S --> G["rag<br/>documents · embeddings (fastembed)<br/>vector_store (Qdrant)"]
     R -.-> C["core<br/>config · security · exceptions<br/>logging · tracing"]
     S -.-> C
     M -.-> C
@@ -158,6 +161,7 @@ sequenceDiagram
         end
         JOB->>JOB: sqlglot extraction in a thread (to_thread)
         JOB->>DB: merge tables/columns/FKs → ready + stats (or failed + message)
+        Note over JOB: Phase 3: same job, still under the lock → index_schema (next diagram)
     end
     loop every 1.5 s while pending/processing
         FE->>API: GET /schemas/{id} + /sources
@@ -166,6 +170,49 @@ sequenceDiagram
 ```
 
 A failed upload can simply be sent again (the same content is retried). Jobs interrupted by a server restart are marked failed at startup, so the page never polls forever.
+
+### Indexing a schema for search (Phase 3)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant JOB as index_schema (background)
+    participant DB as PostgreSQL
+    participant LLM as Groq · gpt-oss-20b
+    participant EMB as fastembed (CPU, ONNX)
+    participant QD as Qdrant
+
+    JOB->>DB: load tables + columns + FKs · index_status = indexing
+    loop tables whose structure changed (fingerprint), 8 per call
+        JOB->>LLM: table cards → TableDescriptions (strict JSON)
+        LLM-->>JOB: description + synonyms per table
+        JOB->>DB: save (commit per batch)
+    end
+    JOB->>JOB: one search document per table (names as words, synonyms, References / Referenced by)
+    JOB->>EMB: documents whose text changed (fingerprint) → to_thread
+    EMB-->>JOB: dense 384-d (bge-small) + sparse (BM25) vectors
+    JOB->>QD: upsert points (id = table id, payload = user_id, schema_id, document...)
+    JOB->>QD: delete this schema's points whose table is gone
+    JOB->>DB: fingerprints + index_status = ready + stats
+    Note over JOB,LLM: LLM rate-limited → skip descriptions, still embed (graceful degradation)
+```
+
+Re-running costs only what changed: an unchanged schema re-indexes in ~0.24 s with no LLM call. PostgreSQL stays the source of truth; Qdrant is a derived index that `POST /schemas/{id}/index` can always rebuild.
+
+### Searching a schema (Phase 3)
+
+```mermaid
+flowchart LR
+    Q["question<br/>“how long do deliveries take”"] --> E1["embed query<br/>bge-small (dense) · BM25 (sparse)<br/>~6 ms on CPU"]
+    E1 --> S{"Qdrant query_points<br/>filter: user_id AND schema_id"}
+    S -->|"using = dense<br/>cosine similarity"| D["shpmt .586 · ord_hdr .534 · cust .497"]
+    S -->|"using = bm25<br/>IDF applied by Qdrant"| K["shpmt 2.99 (only match)"]
+    D --> J["join back to PostgreSQL<br/>drop deleted tables"]
+    K --> J
+    J --> R["ranked tables<br/>(Phase 4: fuse with RRF → rerank → prompt)"]
+```
+
+One collection holds every user's tables. The tenant filter is applied *inside* the vector search, so another user's tables can never be returned and `limit` counts only allowed points.
 
 ### Streaming an explanation (Server-Sent Events)
 
@@ -262,6 +309,10 @@ erDiagram
         varchar name "unique per user"
         varchar dialect
         text description
+        varchar index_status "none | pending | indexing | ready | failed"
+        text index_error
+        jsonb index_stats "embedded, unchanged, enriched, cost, seconds"
+        timestamptz indexed_at
     }
     SCHEMA_SOURCES {
         uuid id PK
@@ -284,6 +335,11 @@ erDiagram
         varchar name
         text comment
         boolean inferred "seen only in queries"
+        text description "LLM-written, for search"
+        jsonb synonyms "LLM-written, for search"
+        varchar enrichment_hash "fingerprint of what was described"
+        varchar index_hash "fingerprint of what was embedded"
+        timestamptz indexed_at
     }
     SCHEMA_COLUMNS {
         uuid id PK
@@ -324,7 +380,7 @@ flowchart LR
 
 The Groq SDK's own retries are switched off (`max_retries=0`). By default it would sleep for the server's `Retry-After`, up to 60 s on every attempt, before our fallback could react.
 
-### The RAG pipeline (ingestion built in Phase 2; retrieval in Phases 3–4)
+### The RAG pipeline (ingestion + indexing built in Phases 2–3; retrieval in Phase 4)
 
 ```mermaid
 flowchart LR
@@ -332,12 +388,13 @@ flowchart LR
         IN["SQL text / .sql file / screenshot"]:::built --> PA["parse<br/>sqlglot + vision LLM"]:::built
         PA --> NO["normalize + merge<br/>tables, columns, PK/FK"]:::built
         NO --> CH["chunk<br/>1 table = 1 card"]:::built
-        CH --> EM["embed<br/>HF model"]:::planned
-        EM --> QD[("Qdrant")]:::planned
+        CH --> EN["describe<br/>LLM synonyms"]:::built
+        EN --> EM["embed<br/>bge-small + BM25"]:::built
+        EM --> QD[("Qdrant")]:::built
     end
     subgraph Query["Query (online)"]
-        Q["question + chosen tables"] --> RW["rewrite"]
-        RW --> HY["hybrid search<br/>BM25 + dense"]
+        Q["question + chosen tables"]:::built --> RW["rewrite"]:::planned
+        RW --> HY["hybrid search<br/>BM25 + dense"]:::planned
         HY --> RRF["RRF fusion"]
         RRF --> FK["FK-graph expand"]
         FK --> RR["rerank"]
@@ -353,7 +410,7 @@ flowchart LR
     classDef planned fill:#fff8e1,stroke:#c96a00,stroke-dasharray:5 5,color:#1b2740
 ```
 
-Today (Phase 2) the "retrieval" step is the user's table selection, or every table up to a character budget (`SCHEMA_CONTEXT_MAX_CHARS`); the answer reports when tables were left out. Phases 3–4 replace that with relevance-ranked retrieval, measured against this baseline in Phase 5.
+Today the SQL prompt still gets the user's table selection, or every table up to a character budget (`SCHEMA_CONTEXT_MAX_CHARS`). Phase 3 built the index and single-method search (dense or BM25, try them in the Database Setup search playground); Phase 4 fuses them (RRF), expands along foreign keys, reranks and feeds the result to the prompt, measured against the budget baseline in Phase 5.
 
 ### Coming next: the agent graph (Phase 6)
 
@@ -430,9 +487,11 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --reload-include .env --port 8000
 ```
 
+**Vector search (Qdrant).** Nothing to install by default: with `QDRANT_URL` empty, Qdrant runs *embedded* in the API process and stores its data in `backend/.qdrant/` (one process at a time). Alternatives: `docker compose up -d qdrant` + `QDRANT_URL=http://localhost:6333`, or a free Qdrant Cloud cluster (`QDRANT_URL` + `QDRANT_API_KEY`). The first index downloads two small Hugging Face models (~80 MB) into `backend/.cache/fastembed/`.
+
 `alembic upgrade head` creates the tables. In pgAdmin you should then see `users`, `query_history`, `db_schemas`, `schema_sources`, `schema_tables`, `schema_columns`, `schema_relationships` and `alembic_version` under **sql_assistant → Schemas → public → Tables** (refresh the tree first).
 
-On startup the API logs `Database ready: postgresql+asyncpg://…` or explains what's wrong. You can also check <http://localhost:8000/api/v1/health/ready> (`"database": "up"`). Settings are read once at startup; `--reload-include .env` makes the dev server restart when you edit `.env`, not only when `.py` files change.
+On startup the API logs `Database ready: postgresql+asyncpg://…` or explains what's wrong. You can also check <http://localhost:8000/api/v1/health/ready> (`"database": "up"`, `"vector_store": "up"`). Settings are read once at startup; `--reload-include .env` makes the dev server restart when you edit `.env`, not only when `.py` files change.
 
 Interactive API docs: <http://localhost:8000/docs>
 
@@ -473,7 +532,7 @@ uv run pytest
 uv run ruff check app tests
 ```
 
-Tests use in-memory SQLite and a fake LLM provider (which can simulate structured answers, streaming, a vision model, rate limits and outages), so they need no database, network or API key. Background ingestion jobs run against the same in-memory database.
+Tests use in-memory SQLite, a fake LLM provider (which can simulate structured answers, streaming, a vision model, table descriptions, rate limits and outages), a deterministic fake embedder and a real Qdrant running in memory, so they need no database, network, model download or API key. Background ingestion jobs run against the same in-memory database.
 
 ---
 
@@ -481,7 +540,7 @@ Tests use in-memory SQLite and a fake LLM provider (which can simulate structure
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/health/live` · `/health/ready` | – | liveness · readiness (DB check) |
+| GET | `/api/v1/health/live` · `/health/ready` | – | liveness · readiness (DB check + vector store up/down) |
 | POST | `/api/v1/auth/signup` | – | create account → `201` |
 | POST | `/api/v1/auth/login` | – | email + password → token pair |
 | POST | `/api/v1/auth/refresh` | refresh token | new token pair |
@@ -498,6 +557,8 @@ Tests use in-memory SQLite and a fake LLM provider (which can simulate structure
 | POST | `/api/v1/schemas/{id}/sources/text` | ✓ | `{"sql": "…"}` → `202` + source (`200` if this exact content was already uploaded) |
 | POST | `/api/v1/schemas/{id}/sources/file` | ✓ | multipart `file`: `.sql`/`.ddl`/`.txt` or PNG/JPEG/WebP → `202` (`413` too large, `415` other types) |
 | GET | `/api/v1/schemas/{id}/sources` · `/sources/{source_id}` | ✓ | uploads, newest first · poll one until `ready` or `failed` |
+| POST | `/api/v1/schemas/{id}/index` | ✓ | rebuild the search index → `202`; poll the schema's `index_status` (unchanged tables are skipped) |
+| GET | `/api/v1/schemas/{id}/search?q=&mode=dense\|sparse&limit=5` | ✓ | tables most related to `q`, by meaning (dense) or keywords (BM25), with scores and the indexed text |
 
 All three SQL endpoints accept an optional `reasoning_effort` (`low` · `medium` · `high`), and an optional `schema_id` plus `tables` (names to focus on; omitted = the whole schema up to the prompt budget). Every answer (`LLMResponse`) contains:
 - `output`, `explanation`, `assumptions`, `tables_used`;
@@ -527,20 +588,25 @@ backend/
                           SchemaRelationship (SQLAlchemy 2 typed ORM)
     schemas/              Pydantic request/response models (API contracts)
     services/             auth, sql (structured + streamed LLM calls), history,
-                          schemas (CRUD, uploads, merge rules, prompt context), ingestion (background job)
+                          schemas (CRUD, uploads, merge rules, prompt context), ingestion (background job),
+                          indexing (enrich → embed → Qdrant, search), jobs (job deps + per-schema locks)
+    rag/                  documents (search text per table), embeddings (fastembed: bge-small + BM25),
+                          vector_store (Qdrant: collection, tenant-filtered search, deletes)
     llm/                  client (ChatGroq tiers, retry/fallback, vision model), prompts (versioned,
-                          schema slots), vision (screenshot → DDL), output_schemas, usage (tokens, cost)
+                          schema slots), vision (screenshot → DDL), enrichment (table descriptions),
+                          output_schemas, usage (tokens, cost)
     sql_tools/            sqlglot: validation (syntax + unknown tables/columns), ddl (schema
                           extraction), catalog (name normalization)
-    api/deps.py           shared dependencies: DbSession, SessionFactory, CurrentUser, LLM (provider)
+    api/deps.py           shared dependencies: DbSession, SessionFactory, CurrentUser, LLM, Embeddings,
+                          VectorIndex, Jobs
     api/v1/routes/        auth, users, sql (incl. SSE stream), history, schemas, health
   alembic/                migrations (env.py uses the app's DB settings)
-  tests/                  pytest: SQLite in-memory + fake LLM provider (no network)
+  tests/                  pytest: SQLite in-memory, fake LLM + fake embedder, in-memory Qdrant (no network)
   pyproject.toml, uv.lock, requirements.txt (exported for pip users)
 frontend/
   src/lib/api.js          the only module that talks to the backend (tokens, refresh, errors, SSE, uploads)
   src/lib/                dialects (one list for every dropdown), format helpers
-  src/components/         ProtectedRoute, ReasoningEffortSelect, LLMResultDetails
+  src/components/         ProtectedRoute, ReasoningEffortSelect, LLMResultDetails, SchemaSearch (index + playground)
   src/*.jsx               pages (DatabaseSetup = schema workspace, queryBuilder = table picker + generate)
 docs/
   ROADMAP.md              phases, decisions, learning goals

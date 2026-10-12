@@ -29,3 +29,6 @@ Thumbs.db
 
 # Logs
 *.log
+# Phase 3: embedded Qdrant data and downloaded embedding models (both rebuildable)
+.qdrant/
+.cache/
