@@ -23,6 +23,10 @@ dependencies = [
     "langchain-groq>=0.2",
     "sqlglot>=30.21.0",
     "python-multipart>=0.0.32",
+    # Vector search (Phase 3): Qdrant client + Hugging Face embedding models via ONNX
+    "qdrant-client>=1.19.1",
+    "fastembed>=0.9.0",
+    "httpx>=0.28",  # HTTP client under qdrant-client and groq; we catch its network errors
 ]
 
 [dependency-groups]

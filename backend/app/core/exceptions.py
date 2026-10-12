@@ -91,6 +91,18 @@ class DatabaseUnavailableError(AppError):
     status_code, code, message = 503, "database_unavailable", "The database is unavailable."
 
 
+class VectorStoreError(AppError):
+    status_code, code, message = 503, "vector_store_unavailable", "The search index is unavailable."
+
+
+class EmbeddingError(AppError):
+    status_code, code, message = (
+        503,
+        "embeddings_unavailable",
+        "The embedding model is unavailable.",
+    )
+
+
 def _envelope(status: int, code: str, message: str, details: Any = None, headers=None):
     body = {"error": {"code": code, "message": message, "details": details}}
     return JSONResponse(status_code=status, content=body, headers=headers)

@@ -17,6 +17,9 @@ from app.core.security import decode_token
 from app.db.session import get_db, get_session_factory
 from app.llm.client import LLMProvider, get_llm_provider
 from app.models import User
+from app.rag.embeddings import Embedder, get_embedder
+from app.rag.vector_store import SchemaIndex, get_schema_index
+from app.services.jobs import JobDeps
 
 # auto_error=False: we raise our own 401 in the standard error envelope instead of
 # FastAPI's default 403. It also adds the "Authorize" button to Swagger UI.
@@ -25,6 +28,18 @@ bearer_scheme = HTTPBearer(auto_error=False)
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
 LLM = Annotated[LLMProvider, Depends(get_llm_provider)]
+Embeddings = Annotated[Embedder, Depends(get_embedder)]
+VectorIndex = Annotated[SchemaIndex, Depends(get_schema_index)]
+
+
+def get_job_deps(
+    session_factory: SessionFactory, llm: LLM, embedder: Embeddings, index: VectorIndex
+) -> JobDeps:
+    """Everything a background job needs, bundled (each part stays overridable in tests)."""
+    return JobDeps(session_factory=session_factory, llm=llm, embedder=embedder, index=index)
+
+
+Jobs = Annotated[JobDeps, Depends(get_job_deps)]
 
 
 async def get_current_user(

@@ -159,6 +159,10 @@ async def summaries(db: AsyncSession, schemas: list[DbSchema]) -> list[SchemaSum
                 column_count=column_counts.get(s.id, 0),
                 created_at=s.created_at,
                 updated_at=s.updated_at,
+                index_status=s.index_status,
+                index_error=s.index_error,
+                index_stats=s.index_stats,
+                indexed_at=s.indexed_at,
             )
         )
     return result
@@ -173,7 +177,7 @@ async def list_schemas(db: AsyncSession, user_id: uuid.UUID) -> list[SchemaSumma
     return await summaries(db, schemas)
 
 
-class _Resolver:
+class TableResolver:
     """Finds tables by key, or by bare name when that name is unique."""
 
     def __init__(self, tables: list[SchemaTable]) -> None:
@@ -196,13 +200,16 @@ class _Resolver:
         return candidates[0] if len(candidates) == 1 else None
 
 
-def _table_read(table: SchemaTable, resolver: _Resolver) -> TableRead:
+def _table_read(table: SchemaTable, resolver: TableResolver) -> TableRead:
     return TableRead(
         id=table.id,
         name=table.name,
         db_schema=table.db_schema,
         comment=table.comment,
         inferred=table.inferred,
+        description=table.description,
+        synonyms=table.synonyms or [],
+        indexed=table.index_hash is not None,
         columns=table.columns,
         relationships=[
             RelationshipRead(
@@ -221,7 +228,7 @@ def _table_read(table: SchemaTable, resolver: _Resolver) -> TableRead:
 async def schema_detail(db: AsyncSession, user_id: uuid.UUID, schema_id: uuid.UUID) -> SchemaDetail:
     schema = await get_owned(db, user_id, schema_id, with_tables=True)
     [summary] = await summaries(db, [schema])
-    resolver = _Resolver(schema.tables)
+    resolver = TableResolver(schema.tables)
     return SchemaDetail(
         **summary.model_dump(), tables=[_table_read(t, resolver) for t in schema.tables]
     )
@@ -526,7 +533,7 @@ async def build_context(
         catalog.add(t.db_schema, t.name, {c.name for c in t.columns})
 
     if table_names:
-        resolver = _Resolver(schema.tables)
+        resolver = TableResolver(schema.tables)
         wanted, unknown = [], []
         for name in dict.fromkeys(table_names):
             table = resolver.find(name)

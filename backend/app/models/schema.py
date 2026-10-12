@@ -8,6 +8,9 @@
 
 Relationships point at their target by *key* ("sales.customers"), not by row id, so
 uploads can arrive in any order: a FK may reference a table that a later upload adds.
+
+Phase 3 adds the search-index bookkeeping: each table is one point in Qdrant whose id
+is the table's id; the vectors themselves live only in Qdrant.
 """
 
 import uuid
@@ -48,6 +51,12 @@ class DbSchema(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100))
     dialect: Mapped[str] = mapped_column(String(40))  # UI label, e.g. "PostgreSQL"
     description: Mapped[str | None] = mapped_column(Text)
+    # Phase 3: the search index (Qdrant) of this schema's tables.
+    # none -> pending -> indexing -> ready | failed (a job, like an upload)
+    index_status: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    index_error: Mapped[str | None] = mapped_column(Text)
+    index_stats: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship()
     sources: Mapped[list["SchemaSource"]] = relationship(
@@ -107,6 +116,14 @@ class SchemaTable(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     comment: Mapped[str | None] = mapped_column(Text)
     # True when we only saw the table used in queries (types unknown), not its CREATE TABLE.
     inferred: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 3. Written by the LLM ("enrichment"), embedded together with the columns.
+    description: Mapped[str | None] = mapped_column(Text)
+    synonyms: Mapped[list[str] | None] = mapped_column(JSONType)
+    # Fingerprints of what was last described / embedded. If the table's current text
+    # hashes to the same value, the expensive step is skipped (incremental indexing).
+    enrichment_hash: Mapped[str | None] = mapped_column(String(64))
+    index_hash: Mapped[str | None] = mapped_column(String(64))
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     schema: Mapped["DbSchema"] = relationship(back_populates="tables")
     columns: Mapped[list["SchemaColumn"]] = relationship(

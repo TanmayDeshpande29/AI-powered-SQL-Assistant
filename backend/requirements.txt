@@ -26,7 +26,13 @@ certifi==2026.7.22
 charset-normalizer==3.5.2
     # via requests
 click==8.5.0
-    # via uvicorn
+    # via
+    #   huggingface-hub
+    #   uvicorn
+colorama==0.4.6 ; sys_platform == 'win32'
+    # via
+    #   loguru
+    #   tqdm
 distro==1.9.0
     # via
     #   groq
@@ -37,15 +43,31 @@ email-validator==2.3.0
     # via sqlassist-backend
 fastapi==0.142.2
     # via sqlassist-backend
+fastembed==0.9.0
+    # via sqlassist-backend
+filelock==4.1.1
+    # via huggingface-hub
+flatbuffers==25.12.19
+    # via onnxruntime
+fsspec==2026.9.0
+    # via huggingface-hub
 greenlet==3.5.6
     # via sqlalchemy
 groq==0.37.1
     # via langchain-groq
+grpcio==1.84.0
+    # via qdrant-client
 h11==0.16.0
     # via
     #   httpcore
     #   httpcore2
     #   uvicorn
+h2==4.4.1
+    # via httpx
+hf-xet==1.7.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+    # via huggingface-hub
+hpack==4.2.0
+    # via h2
 httpcore==1.0.9
     # via httpx
 httpcore2==2.13.1 ; sys_platform != 'emscripten'
@@ -55,11 +77,20 @@ httptools==0.8.0
 httpx==0.28.1
     # via
     #   groq
+    #   huggingface-hub
     #   langchain-core
+    #   qdrant-client
+    #   sqlassist-backend
 httpx2==2.13.1
     # via langsmith
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
+huggingface-hub==1.33.0
+    # via
+    #   fastembed
+    #   tokenizers
+hyperframe==6.1.0
+    # via h2
 idna==3.20
     # via
     #   anyio
@@ -81,18 +112,41 @@ langchain-protocol==0.0.19
     # via langchain-core
 langsmith==0.14.4
     # via langchain-core
+loguru==0.7.3
+    # via fastembed
 mako==1.4.3
     # via alembic
 markupsafe==3.0.4
     # via mako
+mmh3==5.3.1
+    # via fastembed
+numpy==2.5.4
+    # via
+    #   fastembed
+    #   onnxruntime
+    #   qdrant-client
+onnxruntime==1.31.0
+    # via fastembed
 opentelemetry-api==1.45.1
     # via fastapi
 orjson==3.12.0 ; platform_python_implementation != 'PyPy'
     # via langsmith
 packaging==26.3
     # via
+    #   huggingface-hub
     #   langchain-core
     #   langsmith
+    #   onnxruntime
+pillow==12.3.0
+    # via fastembed
+portalocker==3.2.0
+    # via qdrant-client
+protobuf==7.36.2
+    # via
+    #   onnxruntime
+    #   qdrant-client
+py-rust-stemmers==0.1.8
+    # via fastembed
 pydantic==2.13.5
     # via
     #   fastapi
@@ -100,6 +154,7 @@ pydantic==2.13.5
     #   langchain-core
     #   langsmith
     #   pydantic-settings
+    #   qdrant-client
 pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
@@ -112,12 +167,18 @@ python-dotenv==1.2.4
     #   uvicorn
 python-multipart==0.0.32
     # via sqlassist-backend
+pywin32==312 ; sys_platform == 'win32'
+    # via portalocker
 pyyaml==6.0.3
     # via
+    #   huggingface-hub
     #   langchain-core
     #   uvicorn
+qdrant-client==1.19.1
+    # via sqlassist-backend
 requests==2.34.2
     # via
+    #   fastembed
     #   langsmith
     #   requests-toolbelt
 requests-toolbelt==1.0.0
@@ -136,6 +197,12 @@ starlette==1.7.0
     # via fastapi
 tenacity==9.1.4
     # via langchain-core
+tokenizers==0.23.3
+    # via fastembed
+tqdm==4.70.1
+    # via
+    #   fastembed
+    #   huggingface-hub
 truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
@@ -146,7 +213,9 @@ typing-extensions==4.16.0
     #   anyio
     #   fastapi
     #   groq
+    #   grpcio
     #   httpx2
+    #   huggingface-hub
     #   langchain-core
     #   langchain-protocol
     #   langsmith
@@ -162,7 +231,9 @@ typing-inspection==0.4.4
     #   pydantic
     #   pydantic-settings
 urllib3==2.8.0
-    # via requests
+    # via
+    #   qdrant-client
+    #   requests
 uuid-utils==0.17.1
     # via
     #   langchain-core
@@ -177,6 +248,8 @@ websockets==17.2
     # via
     #   langsmith
     #   uvicorn
+win32-setctime==1.2.0 ; sys_platform == 'win32'
+    # via loguru
 xxhash==4.0.1
     # via langsmith
 zstandard==0.25.0

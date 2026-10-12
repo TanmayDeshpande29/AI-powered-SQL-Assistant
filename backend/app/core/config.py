@@ -90,6 +90,25 @@ class Settings(BaseSettings):
     # Bigger schemas get truncated: the limit that RAG (Phases 3-4) removes.
     schema_context_max_chars: int = 12_000
 
+    # --- Embeddings + vector store (Phase 3) ---
+    # Qdrant: a server URL (docker compose: http://localhost:6333, or Qdrant Cloud + API key),
+    # or, when empty, "embedded" mode: Qdrant runs inside this process and stores its data
+    # in qdrant_path. Embedded mode = no server to install, one process only, exact search.
+    qdrant_url: str | None = None
+    qdrant_api_key: SecretStr | None = None
+    qdrant_path: str = ".qdrant"
+    qdrant_collection: str = "schema_tables"
+    # Hugging Face models, run locally on the CPU through ONNX Runtime (fastembed): no
+    # API key, no GPU, no PyTorch. Downloaded once into embedding_cache_dir on first use.
+    embedding_model_dense: str = "BAAI/bge-small-en-v1.5"  # 384-d meaning vectors, 67 MB
+    embedding_model_sparse: str = "Qdrant/bm25"  # keyword weights (BM25), IDF applied by Qdrant
+    embedding_cache_dir: str = ".cache/fastembed"
+    embedding_batch_size: int = 32
+    # LLM-written description + synonyms per table, added to what we embed ("purchases"
+    # should find `orders`). Costs one fast-model call per batch of tables.
+    schema_enrichment: bool = True
+    schema_enrichment_batch_size: int = 8
+
     # --- Tracing (LangSmith) ---
     # Off unless LANGSMITH_TRACING=true and an API key are set. When on, prompts and answers
     # are sent to LangSmith's cloud so every LLM call can be inspected as a trace.

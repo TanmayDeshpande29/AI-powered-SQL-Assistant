@@ -21,3 +21,23 @@ class SQLAnswer(BaseModel):
         description="Every guess about table names, column names or data meaning. Empty if none."
     )
     tables_used: list[str] = Field(description="Every table the SQL reads from or writes to.")
+
+
+class TableDescription(BaseModel):
+    """Search-index metadata for one table."""
+
+    table: str = Field(description="The table name exactly as written after TABLE.")
+    description: str = Field(
+        description="One plain-English sentence: what one row represents and what the "
+        "table is used for, naming its key measures or dates."
+    )
+    synonyms: list[str] = Field(
+        description="2 to 6 other words or short phrases business users would use for this "
+        "data (e.g. 'purchases' for orders). Lowercase; not just the table name again."
+    )
+
+
+class TableDescriptions(BaseModel):
+    """One entry for every table in the schema block, in the same order."""
+
+    tables: list[TableDescription]

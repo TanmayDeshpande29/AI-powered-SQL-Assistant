@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 SourceKind = Literal["sql_text", "sql_file", "image"]
 SourceStatus = Literal["pending", "processing", "ready", "failed"]
 SchemaStatus = Literal["empty", "processing", "ready"]
+IndexStatus = Literal["none", "pending", "indexing", "ready", "failed"]
 
 MAX_PASTED_SQL_CHARS = 1_000_000
 
@@ -73,6 +74,9 @@ class TableRead(BaseModel):
     db_schema: str | None
     comment: str | None
     inferred: bool
+    description: str | None  # Phase 3: written by the LLM for the search index
+    synonyms: list[str]
+    indexed: bool  # has a point in the search index
     columns: list[ColumnRead]
     relationships: list[RelationshipRead]
 
@@ -87,7 +91,32 @@ class SchemaSummary(BaseModel):
     column_count: int
     created_at: datetime
     updated_at: datetime
+    # Phase 3: the search index (a background job, like uploads)
+    index_status: IndexStatus
+    index_error: str | None
+    index_stats: dict[str, Any] | None
+    indexed_at: datetime | None
 
 
 class SchemaDetail(SchemaSummary):
     tables: list[TableRead]
+
+
+class SearchHit(BaseModel):
+    rank: int
+    table_id: uuid.UUID
+    name: str
+    db_schema: str | None
+    description: str | None
+    score: float  # cosine similarity (dense) or BM25 score (sparse): not comparable
+    document: str  # exactly what was embedded for this table
+
+
+class SearchResponse(BaseModel):
+    query: str
+    mode: Literal["dense", "sparse"]
+    model: str
+    index_status: IndexStatus
+    embed_ms: int
+    search_ms: int
+    results: list[SearchHit]

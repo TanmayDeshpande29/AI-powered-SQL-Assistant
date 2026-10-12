@@ -7,29 +7,28 @@ A database row is the job record:  pending -> processing -> ready | failed.
 Why not a real queue yet? A Redis-backed worker (arq / Celery) survives restarts and
 scales out, but needs Redis running. The client contract (202 + polling) is the same
 either way, so only the executor changes when we add one in the SaaS phase.
+
+Phase 3: after a successful merge, the same job refreshes the schema's search index
+(services/indexing.py), so new tables become searchable without an extra click.
 """
 
 import asyncio
 import logging
 import uuid
-from collections import defaultdict
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import AppError
 from app.db.base import utcnow
-from app.llm.client import LLMProvider
 from app.llm.vision import transcribe_schema_image
 from app.models import DbSchema, SchemaSource
+from app.services import indexing
 from app.services import schemas as schema_service
+from app.services.jobs import JobDeps, schema_lock
 from app.sql_tools.ddl import extract_schema
 
 logger = logging.getLogger(__name__)
-
-# One upload at a time per schema: merges of the same schema must not interleave.
-# (Process-local. A distributed queue would use a per-schema job key instead.)
-_schema_locks: defaultdict[uuid.UUID, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 NO_TABLES = (
     "No tables were found. Upload CREATE TABLE statements (e.g. pg_dump --schema-only, "
@@ -41,15 +40,13 @@ class IngestionError(Exception):
     """An expected failure with a message for the user."""
 
 
-async def process_source(
-    source_id: uuid.UUID, *, session_factory: async_sessionmaker[AsyncSession], llm: LLMProvider
-) -> None:
-    async with session_factory() as db:
+async def process_source(source_id: uuid.UUID, deps: JobDeps) -> None:
+    async with deps.session_factory() as db:
         source = await db.get(SchemaSource, source_id)
         if source is None:
             return  # the schema was deleted meanwhile
         schema = await db.get(DbSchema, source.schema_id)
-        async with _schema_locks[schema.id]:
+        async with schema_lock(schema.id):
             # Check the status only once we hold the lock: two tasks for the same upload
             # may both have seen "pending" before one of them got the lock.
             await db.refresh(source)
@@ -61,7 +58,7 @@ async def process_source(
             try:
                 if source.kind == "image":
                     transcription = await transcribe_schema_image(
-                        llm, source.raw, source.content_type or "image/png", schema.dialect
+                        deps.llm, source.raw, source.content_type or "image/png", schema.dialect
                     )
                     source.text, source.model = transcription.sql, transcription.model
                     extra_stats["vision"] = {
@@ -94,6 +91,10 @@ async def process_source(
                 source.stats = extra_stats or None
             source.processed_at = utcnow()
             await db.commit()
+            if error is None:
+                # Still under the lock: no other upload can change the tables meanwhile.
+                # The upload is already "ready"; the index has its own status.
+                await indexing.index_schema(db, schema.id, deps)
 
 
 async def recover_interrupted(session_factory: async_sessionmaker[AsyncSession]) -> int:
@@ -109,7 +110,17 @@ async def recover_interrupted(session_factory: async_sessionmaker[AsyncSession])
                 processed_at=utcnow(),
             )
         )
+        indexes = await db.execute(
+            update(DbSchema)
+            .where(DbSchema.index_status.in_(indexing.INDEX_ACTIVE))
+            .values(
+                index_status="failed",
+                index_error="Interrupted by a server restart. Click Rebuild index.",
+            )
+        )
         await db.commit()
         if result.rowcount:
             logger.warning("Marked %s interrupted schema upload(s) as failed.", result.rowcount)
+        if indexes.rowcount:
+            logger.warning("Marked %s interrupted index build(s) as failed.", indexes.rowcount)
         return result.rowcount

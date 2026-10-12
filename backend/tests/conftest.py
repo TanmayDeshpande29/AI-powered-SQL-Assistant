@@ -14,6 +14,10 @@ os.environ.update(
     LANGSMITH_TRACING="false",  # never send test runs to LangSmith
 )
 
+import math  # noqa: E402
+import re  # noqa: E402
+import zlib  # noqa: E402
+from collections import Counter  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -25,14 +29,17 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel  #
 from langchain_core.messages import AIMessage, AIMessageChunk  # noqa: E402
 from langchain_core.outputs import ChatGenerationChunk  # noqa: E402
 from langchain_core.runnables import RunnableLambda  # noqa: E402
+from qdrant_client import AsyncQdrantClient  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db, get_session_factory  # noqa: E402
 from app.llm.client import get_llm_provider  # noqa: E402
-from app.llm.output_schemas import SQLAnswer  # noqa: E402
+from app.llm.output_schemas import SQLAnswer, TableDescription, TableDescriptions  # noqa: E402
 from app.main import app  # noqa: E402
+from app.rag.embeddings import Embedding, SparseVector, get_embedder  # noqa: E402
+from app.rag.vector_store import SchemaIndex, get_schema_index  # noqa: E402
 
 FAKE_ANSWER = SQLAnswer(
     sql="```sql\nSELECT id, email FROM users;\n```",  # fenced on purpose: must be stripped
@@ -66,6 +73,7 @@ class FakeChatModel(FakeListChatModel):
     errors: list[Any] = []
     calls: int = 0
     last_messages: list[Any] = []  # the prompt the model received last (for assertions)
+    synonyms: dict[str, list[str]] = {}  # table name -> synonyms the fake "LLM" invents
 
     def _maybe_fail(self) -> None:
         self.calls += 1
@@ -81,10 +89,26 @@ class FakeChatModel(FakeListChatModel):
         def respond(prompt):
             self.last_messages = prompt.to_messages()
             self._maybe_fail()
+            if schema is TableDescriptions:
+                return {"raw": self._raw(), "parsed": self._describe(), "parsing_error": None}
             parsing_error = None if self.answer else ValueError("not valid JSON")
             return {"raw": self._raw(), "parsed": self.answer, "parsing_error": parsing_error}
 
         return RunnableLambda(respond)
+
+    def _describe(self) -> TableDescriptions:
+        """Table descriptions for every "TABLE name" line in the prompt."""
+        names = re.findall(r"^TABLE (\S+)", self.last_messages[-1].content, re.MULTILINE)
+        return TableDescriptions(
+            tables=[
+                TableDescription(
+                    table=name,
+                    description=f"One row per {name.split('.')[-1]} record.",
+                    synonyms=self.synonyms.get(name.split(".")[-1], [f"{name} data"]),
+                )
+                for name in names
+            ]
+        )
 
     def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
         """Plain (non-streaming, unstructured) calls, e.g. the vision transcription."""
@@ -133,6 +157,43 @@ class FakeLLMProvider:
         return self.vision.model_name
 
 
+class FakeEmbedder:
+    """Deterministic stand-in for fastembed: no model download, same shapes.
+
+    dense  = hashed bag of words (cosine similarity ~ shared words)
+    sparse = word counts by hashed token id (like BM25 before Qdrant applies IDF)
+    """
+
+    dense_model = "fake-dense"
+    sparse_model = "fake-bm25"
+    dense_dim = 64
+
+    def __init__(self) -> None:
+        self.documents_embedded = 0
+
+    @staticmethod
+    def _words(text: str) -> list[str]:
+        return re.findall(r"[a-z0-9]+", text.lower())
+
+    def _embed(self, text: str) -> Embedding:
+        counts = Counter(zlib.crc32(w.encode()) for w in self._words(text))
+        dense = [0.0] * self.dense_dim
+        for token, n in counts.items():
+            dense[token % self.dense_dim] += n
+        norm = math.sqrt(sum(x * x for x in dense)) or 1.0
+        return Embedding(
+            dense=[x / norm for x in dense],
+            sparse=SparseVector(indices=list(counts), values=[float(n) for n in counts.values()]),
+        )
+
+    def embed_documents(self, texts: list[str]) -> list[Embedding]:
+        self.documents_embedded += len(texts)
+        return [self._embed(t) for t in texts]
+
+    def embed_query(self, text: str) -> Embedding:
+        return self._embed(text)
+
+
 def rate_limit_error(retry_after: str = "7") -> groq.RateLimitError:
     request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
     response = httpx.Response(429, headers={"retry-after": retry_after}, request=request)
@@ -161,7 +222,22 @@ def fake_llm() -> FakeLLMProvider:
 
 
 @pytest.fixture
-async def client(session_factory, fake_llm):
+def fake_embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+async def vector_index(fake_embedder):
+    # A real Qdrant, embedded and in memory: same API and filters, gone after the test.
+    index = SchemaIndex(
+        AsyncQdrantClient(location=":memory:"), "test_tables", fake_embedder.dense_dim, local=True
+    )
+    yield index
+    await index.close()
+
+
+@pytest.fixture
+async def client(session_factory, fake_llm, fake_embedder, vector_index):
     async def override_get_db():
         async with session_factory() as session:
             yield session
@@ -171,6 +247,8 @@ async def client(session_factory, fake_llm):
     app.dependency_overrides[get_llm_provider] = lambda: fake_llm
     # Background jobs open their own sessions: point them at the test database too.
     app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_embedder] = lambda: fake_embedder
+    app.dependency_overrides[get_schema_index] = lambda: vector_index
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
