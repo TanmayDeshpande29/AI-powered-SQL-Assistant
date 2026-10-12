@@ -64,8 +64,11 @@ function refreshTokens() {
 // fetch() + Authorization header + one silent token refresh on 401. Returns the raw
 // Response, so both JSON calls and event streams can build on it.
 async function authFetch(path, { method = "GET", body, auth = true, retry = true, signal } = {}) {
+  // FormData (file uploads) is sent as multipart/form-data: the browser sets that
+  // Content-Type itself, including the boundary that separates the parts.
+  const isForm = body instanceof FormData
   const headers = {}
-  if (body !== undefined) headers["Content-Type"] = "application/json"
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json"
   if (auth && tokens.access) headers.Authorization = `Bearer ${tokens.access}`
 
   let res
@@ -73,7 +76,7 @@ async function authFetch(path, { method = "GET", body, auth = true, retry = true
     res = await fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
       signal,
     })
   } catch (err) {
@@ -154,6 +157,15 @@ async function streamEvents(path, body, { onEvent, signal }) {
   }
 }
 
+function llmOptions({ saveHistory, reasoningEffort, schemaId, tables }) {
+  return {
+    save_history: saveHistory,
+    reasoning_effort: reasoningEffort,
+    schema_id: schemaId,
+    tables: tables?.length ? tables : null,
+  }
+}
+
 export const api = {
   // auth
   signup: ({ name, email, password }) =>
@@ -175,27 +187,28 @@ export const api = {
     }),
   deleteAccount: () => request("/users/me", { method: "DELETE" }),
 
-  // AI features. reasoningEffort: "low" | "medium" | "high" | null (null = server default)
-  generateSql: ({ question, dialect, saveHistory = true, reasoningEffort = null }) =>
+  // AI features. reasoningEffort: "low" | "medium" | "high" | null (null = server default).
+  // schemaId + tables (optional) ground the answer in an uploaded schema.
+  generateSql: ({ question, dialect, saveHistory = true, reasoningEffort = null, schemaId = null, tables = null }) =>
     request("/sql/generate", {
       method: "POST",
-      body: { question, dialect, save_history: saveHistory, reasoning_effort: reasoningEffort },
+      body: { question, dialect, ...llmOptions({ saveHistory, reasoningEffort, schemaId, tables }) },
     }),
-  assistSql: ({ mode, sql, dialect, saveHistory = true, reasoningEffort = null }) =>
+  assistSql: ({ mode, sql, dialect, saveHistory = true, reasoningEffort = null, schemaId = null, tables = null }) =>
     request("/sql/assist", {
       method: "POST",
-      body: { mode, sql, dialect, save_history: saveHistory, reasoning_effort: reasoningEffort },
+      body: { mode, sql, dialect, ...llmOptions({ saveHistory, reasoningEffort, schemaId, tables }) },
     }),
   // Streams the explanation: onToken(text) runs for every piece as it arrives; the
   // promise resolves with the final result (usage, cost, history_id) or rejects.
   streamExplain: async (
-    { sql, dialect, saveHistory = true, reasoningEffort = null },
+    { sql, dialect, saveHistory = true, reasoningEffort = null, schemaId = null, tables = null },
     { onToken, signal } = {},
   ) => {
     let result = null
     await streamEvents(
       "/sql/explain/stream",
-      { sql, dialect, save_history: saveHistory, reasoning_effort: reasoningEffort },
+      { sql, dialect, ...llmOptions({ saveHistory, reasoningEffort, schemaId, tables }) },
       {
         signal,
         onEvent: ({ event, data }) => {
@@ -211,6 +224,24 @@ export const api = {
     )
     if (!result) throw new ApiError(0, "stream_incomplete", "The answer stream ended unexpectedly.")
     return result
+  },
+
+  // schemas (Phase 2): uploads are processed in the background -> poll the source
+  listSchemas: () => request("/schemas"),
+  createSchema: ({ name, dialect, description = null }) =>
+    request("/schemas", { method: "POST", body: { name, dialect, description } }),
+  getSchema: (id) => request(`/schemas/${id}`),
+  updateSchema: (id, changes) => request(`/schemas/${id}`, { method: "PATCH", body: changes }),
+  deleteSchema: (id) => request(`/schemas/${id}`, { method: "DELETE" }),
+  deleteSchemaTable: (schemaId, tableId) =>
+    request(`/schemas/${schemaId}/tables/${tableId}`, { method: "DELETE" }),
+  listSchemaSources: (id) => request(`/schemas/${id}/sources`),
+  getSchemaSource: (schemaId, sourceId) => request(`/schemas/${schemaId}/sources/${sourceId}`),
+  addSchemaSql: (id, sql) => request(`/schemas/${id}/sources/text`, { method: "POST", body: { sql } }),
+  uploadSchemaFile: (id, file) => {
+    const form = new FormData()
+    form.append("file", file) // a .sql/.txt file or a PNG/JPEG/WebP screenshot
+    return request(`/schemas/${id}/sources/file`, { method: "POST", body: form })
   },
 
   // history

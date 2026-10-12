@@ -34,6 +34,12 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 CONNECTION_ERRORS = (DBAPIError, OSError)
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """FastAPI dependency for code that outlives the request (background jobs open their
+    own sessions; the request's session is closed by then). Tests override it."""
+    return SessionLocal
+
+
 def _target() -> str:
     """Where we connect, with the password masked: safe to print in logs."""
     return make_url(settings.sqlalchemy_url).render_as_string(hide_password=True)
@@ -67,11 +73,11 @@ async def release_connection(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def check_database() -> None:
+async def check_database() -> bool:
     """Run once at startup: log whether the database is reachable and migrated.
 
     It never crashes the app (so /docs and /health still work); it only tells you,
-    in plain words, what to fix.
+    in plain words, what to fix. Returns True when the database is ready to use.
     """
     try:
         async with engine.connect() as conn:
@@ -85,11 +91,12 @@ async def check_database() -> None:
             _target(),
             _reason(exc),
         )
-        return
+        return False
     if not migrated:
         logger.warning(
             "Connected to %s, but it has no tables yet. Run: uv run alembic upgrade head",
             _target(),
         )
-        return
+        return False
     logger.info("Database ready: %s", _target())
+    return True

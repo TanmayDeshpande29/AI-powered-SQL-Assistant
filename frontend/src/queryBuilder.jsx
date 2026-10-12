@@ -1,6 +1,6 @@
 
 import { motion } from "framer-motion"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Database,
   Search,
@@ -23,15 +23,23 @@ import {
   ArrowLeft,
   Plus,
   Check,
+  Loader2,
 } from "lucide-react"
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api } from "./lib/api";
+import { SQL_DIALECTS, isKnownDialect } from "./lib/dialects";
+import { plural } from "./lib/format";
 import ReasoningEffortSelect from "./components/ReasoningEffortSelect";
 import LLMResultDetails from "./components/LLMResultDetails";
 
 export default function QueryBuilderMainPage() {
   const [selectedTool, setSelectedTool] = useState("Generate SQL")
-  const [selectedDatabase, setSelectedDatabase] = useState("")
+  const [searchParams] = useSearchParams()
+  // Uploaded schemas (Database Setup). ?schema=<id> preselects one (link from that page).
+  const [schemas, setSchemas] = useState(null) // null = still loading
+  const [selectedSchemaId, setSelectedSchemaId] = useState(searchParams.get("schema") ?? "")
+  const [schemaTables, setSchemaTables] = useState({ id: null, tables: [] })
+  const [schemaError, setSchemaError] = useState("")
   const [selectedDialect, setSelectedDialect] = useState("MySQL")
   const [queryInput, setQueryInput] = useState("Show the number of users who signed up in the last week, group by date")
   const [generatedSQL, setGeneratedSQL] = useState("")
@@ -56,35 +64,43 @@ export default function QueryBuilderMainPage() {
     "Users who placed more than 3 orders but none in the last 60 days",
   ]
 
-  const sqlDialects = [
-    { value: "MySQL", label: "MySQL", icon: "🐬" },
-    { value: "Trino SQL", label: "Trino SQL", icon: "⚡" },
-    { value: "Spark SQL", label: "Spark SQL", icon: "✨" },
-  ]
+  // The user's schemas, once.
+  useEffect(() => {
+    let ignore = false
+    api
+      .listSchemas()
+      .then((list) => !ignore && setSchemas(list))
+      .catch((err) => {
+        if (ignore) return
+        setSchemas([])
+        setSchemaError(err.message)
+      })
+    return () => {
+      ignore = true
+    }
+  }, [])
 
-  const databases = [
-    "E-commerce Database",
-    "Analytics Database",
-    "User Management DB",
-    "Inventory System",
-    "Sales Database",
-    "Customer Database",
-  ]
-
-  const sampleTables = {
-    "E-commerce Database": [
-      { name: "users", columns: ["id", "name", "email", "created_at", "last_login"] },
-      { name: "orders", columns: ["id", "user_id", "total", "order_date", "status"] },
-      { name: "products", columns: ["id", "name", "price", "category_id", "stock"] },
-      { name: "categories", columns: ["id", "name", "description", "parent_id"] },
-      { name: "order_items", columns: ["id", "order_id", "product_id", "quantity", "price"] },
-    ],
-    "Analytics Database": [
-      { name: "events", columns: ["id", "user_id", "event_type", "timestamp", "properties"] },
-      { name: "sessions", columns: ["id", "user_id", "start_time", "end_time", "page_views"] },
-      { name: "conversions", columns: ["id", "user_id", "conversion_type", "value", "date"] },
-    ],
-  }
+  // The selected schema's tables. Also switches the dialect to the schema's own.
+  useEffect(() => {
+    if (!selectedSchemaId) return
+    let ignore = false
+    api
+      .getSchema(selectedSchemaId)
+      .then((schema) => {
+        if (ignore) return
+        setSchemaTables({ id: schema.id, tables: schema.tables })
+        setSchemaError("")
+        if (isKnownDialect(schema.dialect)) setSelectedDialect(schema.dialect)
+      })
+      .catch((err) => {
+        if (ignore) return
+        setSchemaError(err.message) // e.g. the schema was deleted meanwhile
+        setSelectedSchemaId("")
+      })
+    return () => {
+      ignore = true
+    }
+  }, [selectedSchemaId])
 
   const sidebarItems = [
     { icon: <Database className="w-5 h-5" />, label: "Query Builder", active: true, to: "/querybuilder" },
@@ -108,6 +124,9 @@ export default function QueryBuilderMainPage() {
         dialect: selectedDialect,
         saveHistory: rememberHistory,
         reasoningEffort,
+        // Grounding: the ticked tables, or the whole schema when none are ticked.
+        schemaId: selectedSchemaId || null,
+        tables: selectedSchemaId ? selectedTables : null,
       })
       setGeneratedSQL(data.output)
       setLastResult(data)
@@ -123,7 +142,12 @@ export default function QueryBuilderMainPage() {
     navigator.clipboard.writeText(generatedSQL)
   }
 
-  const currentTables = selectedDatabase ? sampleTables[selectedDatabase] || [] : []
+  // "sales.orders" when the table has a namespace: unambiguous for the backend.
+  const qualifiedName = (table) => (table.db_schema ? `${table.db_schema}.${table.name}` : table.name)
+  const currentTables = schemaTables.id === selectedSchemaId ? schemaTables.tables : []
+  const tablesLoading = Boolean(selectedSchemaId) && schemaTables.id !== selectedSchemaId
+  const toggleTable = (name) =>
+    setSelectedTables((tables) => (tables.includes(name) ? tables.filter((t) => t !== name) : [...tables, name]))
 
   return (
     
@@ -242,7 +266,7 @@ export default function QueryBuilderMainPage() {
                 onChange={(e) => setSelectedDialect(e.target.value)}
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors appearance-none"
               >
-                {sqlDialects.map((dialect) => (
+                {SQL_DIALECTS.map((dialect) => (
                   <option key={dialect.value} value={dialect.value}>
                     {dialect.icon} {dialect.label}
                   </option>
@@ -259,20 +283,23 @@ export default function QueryBuilderMainPage() {
             >
               <label className="block text-sm font-medium text-gray-300 mb-3">Select a Database:</label>
               <select
-                value={selectedDatabase}
+                value={selectedSchemaId}
                 onChange={(e) => {
-                  setSelectedDatabase(e.target.value)
+                  setSelectedSchemaId(e.target.value)
                   setSelectedTables([])
+                  setSearchTables("")
                 }}
+                disabled={schemas === null}
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors appearance-none"
               >
-                <option value="">Select a Database</option>
-                {databases.map((db) => (
-                  <option key={db} value={db}>
-                    {db}
+                <option value="">{schemas === null ? "Loading…" : "No schema (the AI guesses names)"}</option>
+                {schemas?.map((schema) => (
+                  <option key={schema.id} value={schema.id} disabled={schema.table_count === 0}>
+                    {schema.name} · {schema.dialect} · {plural(schema.table_count, "table")}
                   </option>
                 ))}
               </select>
+              {schemaError && <p className="text-xs text-red-400 mt-2">{schemaError}</p>}
             </motion.div>
 
             {/* Tables Selection */}
@@ -287,8 +314,17 @@ export default function QueryBuilderMainPage() {
                 <h3 className="font-medium">Select Tables</h3>
               </div>
 
-              {selectedDatabase ? (
+              {tablesLoading ? (
+                <div className="py-8 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading tables…
+                </div>
+              ) : selectedSchemaId ? (
                 <>
+                  <p className="text-xs text-gray-400 mb-3">
+                    {selectedTables.length
+                      ? "Only the ticked tables are sent to the AI."
+                      : "None ticked = the AI sees every table (up to its context budget)."}
+                  </p>
                   <div className="relative mb-4">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
@@ -302,37 +338,49 @@ export default function QueryBuilderMainPage() {
 
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {currentTables
-                      .filter((table) => table.name.toLowerCase().includes(searchTables.toLowerCase()))
-                      .map((table) => (
-                        <div
-                          key={table.name}
-                          className="flex items-center space-x-3 p-3 hover:bg-gray-700 rounded-lg cursor-pointer transition-colors"
-                          onClick={() => {
-                            if (selectedTables.includes(table.name)) {
-                              setSelectedTables(selectedTables.filter((t) => t !== table.name))
-                            } else {
-                              setSelectedTables([...selectedTables, table.name])
-                            }
-                          }}
-                        >
-                          <div className="w-4 h-4 border border-gray-500 rounded flex items-center justify-center">
-                            {selectedTables.includes(table.name) && <Check className="w-3 h-3 text-cyan-400" />}
+                      .filter((table) => qualifiedName(table).toLowerCase().includes(searchTables.toLowerCase()))
+                      .map((table) => {
+                        const name = qualifiedName(table)
+                        const checked = selectedTables.includes(name)
+                        return (
+                          <div
+                            key={table.id}
+                            role="checkbox"
+                            aria-checked={checked}
+                            tabIndex={0}
+                            className="flex items-center space-x-3 p-3 hover:bg-gray-700 rounded-lg cursor-pointer transition-colors"
+                            onClick={() => toggleTable(name)}
+                            onKeyDown={(e) => {
+                              if (e.key !== " " && e.key !== "Enter") return
+                              e.preventDefault()
+                              toggleTable(name)
+                            }}
+                          >
+                            <div className="w-4 h-4 border border-gray-500 rounded flex items-center justify-center">
+                              {checked && <Check className="w-3 h-3 text-cyan-400" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium font-mono truncate block">{name}</span>
+                              <p className="text-xs text-gray-400">
+                                {plural(table.columns.length, "column")}
+                                {table.inferred && " · inferred"}
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <span className="text-sm font-medium">{table.name}</span>
-                            <p className="text-xs text-gray-400">{table.columns.length} columns</p>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 </>
               ) : (
                 <div className="text-center py-8 text-gray-400">
                   <p className="text-sm mb-2">Select a database above. If no database exists,</p>
-                  <button className="text-cyan-400 hover:text-cyan-300 text-sm inline-flex items-center space-x-1">
+                  <Link
+                    to="/database-setup"
+                    className="text-cyan-400 hover:text-cyan-300 text-sm inline-flex items-center space-x-1"
+                  >
                     <Plus className="w-4 h-4" />
                     <span>add one here</span>
-                  </button>
+                  </Link>
                 </div>
               )}
             </motion.div>
@@ -353,7 +401,7 @@ export default function QueryBuilderMainPage() {
                 <div className="space-y-2">
                   {selectedTables.map((tableName) => (
                     <div key={tableName} className="flex items-center justify-between p-2 bg-gray-700 rounded-lg">
-                      <span className="text-sm">{tableName}</span>
+                      <span className="text-sm font-mono">{tableName}</span>
                       <button
                         onClick={() => setSelectedTables(selectedTables.filter((t) => t !== tableName))}
                         className="text-red-400 hover:text-red-300 text-xs px-2 py-1 hover:bg-red-400/10 rounded transition-colors"

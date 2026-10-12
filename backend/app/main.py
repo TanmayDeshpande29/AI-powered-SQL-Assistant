@@ -16,7 +16,8 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.tracing import configure_tracing
-from app.db.session import check_database, engine
+from app.db.session import SessionLocal, check_database, engine
+from app.services.ingestion import recover_interrupted
 
 
 @asynccontextmanager
@@ -24,13 +25,16 @@ async def lifespan(_: FastAPI):
     # Code before `yield` runs once at startup, code after it once at shutdown.
     configure_logging()
     configure_tracing(settings)  # before any LLM call: LangSmith caches its env vars
-    await check_database()  # logs a clear hint if PostgreSQL is unreachable or unmigrated
+    # Logs a clear hint if PostgreSQL is unreachable or unmigrated. If it is fine, fail any
+    # schema uploads a previous run left half-done (the in-process job queue died with it).
+    if await check_database():
+        await recover_interrupted(SessionLocal)
     yield
     await engine.dispose()  # close pooled DB connections cleanly
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

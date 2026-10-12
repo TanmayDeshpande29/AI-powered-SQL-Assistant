@@ -23,7 +23,9 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Core ESLint can't see JSX usage: <Foo /> is covered by the capital letter,
+      // <motion.div> (framer-motion) needs its own exception.
+      'no-unused-vars': ['error', { varsIgnorePattern: '^([A-Z_]|motion$)' }],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

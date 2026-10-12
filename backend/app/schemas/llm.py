@@ -12,7 +12,10 @@ class TokenUsage(BaseModel):
 
 
 class SQLValidation(BaseModel):
-    valid: bool
+    valid: bool  # syntax: does it parse for the dialect?
     dialect: str | None  # sqlglot dialect used, e.g. "postgres"; None = generic SQL
     statement_types: list[str] = []  # e.g. ["SELECT"], ["SELECT", "CREATE"]
     errors: list[str] = []
+    # Phase 2: checked against the user's uploaded schema (only when one was used)
+    schema_checked: bool = False
+    schema_issues: list[str] = []  # e.g. "Unknown column: o.amount"

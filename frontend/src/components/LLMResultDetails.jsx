@@ -1,10 +1,54 @@
-import { CheckCircle2, XCircle, AlertTriangle, Cpu, Timer, Coins, Brain } from "lucide-react"
+import { CheckCircle2, XCircle, AlertTriangle, Cpu, Timer, Coins, Brain, Database } from "lucide-react"
+import { formatCost } from "../lib/format"
 
 // Everything the backend tells us about one LLM answer (an LLMResponse):
-// the model's explanation and assumptions, the SQL syntax check, and the run's metrics.
+// the model's explanation and assumptions, the SQL syntax check, the check against
+// the uploaded schema, and the run's metrics.
 
 const formatModel = (model) => model?.replace(/^openai\//, "") ?? "unknown model"
-const formatCost = (usd) => (usd == null ? null : usd < 0.01 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(3)}`)
+
+// Which tables the answer was grounded in (only when a schema was selected).
+function SchemaGrounding({ result }) {
+  if (!result.schema_id) return null
+  const tables = result.schema_tables ?? []
+  return (
+    <p className="text-xs text-gray-400 flex items-start gap-1.5">
+      <Database className="w-3.5 h-3.5 mt-0.5 shrink-0 text-cyan-400" />
+      <span>
+        Grounded in {tables.length} table{tables.length === 1 ? "" : "s"}: <span className="font-mono">{tables.join(", ")}</span>
+        {result.schema_truncated && (
+          <span className="text-amber-400"> (schema too large: some tables were left out; tick the ones you need)</span>
+        )}
+      </span>
+    </p>
+  )
+}
+
+// Names the SQL uses that don't exist in the uploaded schema = likely hallucinations.
+function SchemaIssues({ validation }) {
+  if (!validation?.schema_checked) return null
+  if (!validation.schema_issues.length) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-500/15 text-green-400 border border-green-500/30">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        All tables and columns exist in the schema
+      </span>
+    )
+  }
+  return (
+    <div className="text-xs px-3 py-2 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30">
+      <p className="flex items-center gap-1 font-medium mb-1">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Not found in your schema:
+      </p>
+      <ul className="list-disc list-inside font-mono space-y-0.5">
+        {validation.schema_issues.map((issue) => (
+          <li key={issue}>{issue}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 function ValidationBadge({ validation }) {
   if (!validation) return null
@@ -71,7 +115,11 @@ export default function LLMResultDetails({ result }) {
   if (!result) return null
   return (
     <div className="mt-4 space-y-3 border-t border-gray-700 pt-4">
-      <ValidationBadge validation={result.validation} />
+      <div className="flex flex-wrap items-start gap-2">
+        <ValidationBadge validation={result.validation} />
+        <SchemaIssues validation={result.validation} />
+      </div>
+      <SchemaGrounding result={result} />
       {result.explanation && <p className="text-sm text-gray-300">{result.explanation}</p>}
       {result.assumptions?.length > 0 && (
         <div className="text-sm">

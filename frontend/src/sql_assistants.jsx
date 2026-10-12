@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { Link } from "react-router";
 import { api } from "./lib/api";
+import { SQL_DIALECTS, isKnownDialect } from "./lib/dialects";
 import ReasoningEffortSelect from "./components/ReasoningEffortSelect";
 import LLMResultDetails from "./components/LLMResultDetails";
 
@@ -55,21 +56,31 @@ export default function SQLAssistantsPage() {
   // Full LLMResponse per mode (validation, usage, cost...), shown under the output.
   const [results, setResults] = useState({ "debug-sql": null, "explain-sql": null, "optimize-sql": null })
   const [reasoningEffort, setReasoningEffort] = useState(null) // null = server default
+  // Optional uploaded schema: the answer then uses (and is checked against) its real names.
+  const [schemas, setSchemas] = useState([])
+  const [schemaId, setSchemaId] = useState("")
 
   const speechRecognitionRef = useRef(null)
   const abortRef = useRef(null) // cancels a running stream (new run, or leaving the page)
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const sqlDialects = [
-    { value: "MySQL", label: "MySQL", icon: "🐬" },
-    { value: "PostgreSQL", label: "PostgreSQL", icon: "🐘" },
-    { value: "SQLite", label: "SQLite", icon: "🪶" },
-    { value: "SQL Server", label: "SQL Server", icon: "🏢" },
-    { value: "Oracle", label: "Oracle", icon: "🔴" },
-    { value: "Trino", label: "Trino", icon: "⚡" },
-    { value: "Spark SQL", label: "Spark SQL", icon: "✨" },
-  ]
+  useEffect(() => {
+    let ignore = false
+    api
+      .listSchemas()
+      .then((list) => !ignore && setSchemas(list.filter((schema) => schema.table_count > 0)))
+      .catch(() => {}) // the selector just stays empty; the page works without schemas
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const selectSchema = (id) => {
+    setSchemaId(id)
+    const schema = schemas.find((item) => item.id === id)
+    if (schema && isKnownDialect(schema.dialect)) setSelectedDialect(schema.dialect)
+  }
 
   const assistantModes = [
     {
@@ -121,7 +132,7 @@ export default function SQLAssistantsPage() {
     setIsProcessing(true)
     setOutputs((prev) => ({ ...prev, [mode]: "" }))
     setResults((prev) => ({ ...prev, [mode]: null }))
-    const request = { sql: inputs[mode], dialect: selectedDialect, reasoningEffort }
+    const request = { sql: inputs[mode], dialect: selectedDialect, reasoningEffort, schemaId: schemaId || null }
     try {
       if (mode === "explain-sql") {
         // Streamed: append each piece as it arrives instead of waiting for the whole answer.
@@ -338,18 +349,36 @@ export default function SQLAssistantsPage() {
                   </div>
                 </div>
 
-                {/* SQL Dialect Selector */}
-                <select
-                  value={selectedDialect}
-                  onChange={(e) => setSelectedDialect(e.target.value)}
-                  className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                >
-                  {sqlDialects.map((dialect) => (
-                    <option key={dialect.value} value={dialect.value}>
-                      {dialect.icon} {dialect.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* Schema Selector */}
+                  <select
+                    value={schemaId}
+                    onChange={(e) => selectSchema(e.target.value)}
+                    aria-label="Schema"
+                    className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors max-w-[14rem]"
+                  >
+                    <option value="">No schema</option>
+                    {schemas.map((schema) => (
+                      <option key={schema.id} value={schema.id}>
+                        {schema.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* SQL Dialect Selector */}
+                  <select
+                    value={selectedDialect}
+                    onChange={(e) => setSelectedDialect(e.target.value)}
+                    aria-label="SQL dialect"
+                    className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                  >
+                    {SQL_DIALECTS.map((dialect) => (
+                      <option key={dialect.value} value={dialect.value}>
+                        {dialect.icon} {dialect.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Input Area */}

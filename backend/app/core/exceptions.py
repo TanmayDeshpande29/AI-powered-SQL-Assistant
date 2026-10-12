@@ -56,6 +56,14 @@ class ConflictError(AppError):
     status_code, code, message = 409, "conflict", "Resource already exists."
 
 
+class PayloadTooLargeError(AppError):
+    status_code, code, message = 413, "payload_too_large", "The upload is too large."
+
+
+class UnsupportedMediaTypeError(AppError):
+    status_code, code, message = 415, "unsupported_media_type", "This file type is not supported."
+
+
 class LLMServiceError(AppError):
     status_code, code, message = 502, "llm_unavailable", "The language model is unavailable."
 

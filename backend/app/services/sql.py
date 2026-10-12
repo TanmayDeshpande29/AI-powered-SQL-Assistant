@@ -14,10 +14,11 @@ switch to the other model tier. Phase 2+ adds retrieved schema context to the pr
 
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import RunnableConfig
@@ -34,10 +35,13 @@ from app.llm.client import (
 )
 from app.llm.output_schemas import SQLAnswer
 from app.llm.parsers import extract_sql
-from app.llm.prompts import EXPLAIN_SQL, STRUCTURED_PROMPTS, PromptSpec
+from app.llm.prompts import EXPLAIN_SQL, STRUCTURED_PROMPTS, PromptSpec, schema_inputs
 from app.llm.usage import estimate_cost_usd, usage_from_message
 from app.schemas.llm import SQLValidation, TokenUsage
 from app.sql_tools.validation import validate_sql
+
+if TYPE_CHECKING:
+    from app.services.schemas import SchemaContext
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,20 @@ class LLMResult:
     assumptions: list[str] = field(default_factory=list)
     tables_used: list[str] = field(default_factory=list)
     validation: SQLValidation | None = None
+    # Phase 2: the uploaded schema that grounded the answer, if any
+    schema_id: uuid.UUID | None = None
+    schema_tables: list[str] = field(default_factory=list)
+    schema_truncated: bool = False
+
+
+def _schema_fields(context: "SchemaContext | None") -> dict[str, Any]:
+    if context is None:
+        return {}
+    return {
+        "schema_id": context.schema_id,
+        "schema_tables": context.tables,
+        "schema_truncated": context.truncated,
+    }
 
 
 def _run_config(spec: PromptSpec, effort: str, metadata: dict[str, Any] | None) -> RunnableConfig:
@@ -92,9 +110,11 @@ async def run_structured(
     dialect: str,
     reasoning_effort: ReasoningEffort | None = None,
     metadata: dict[str, Any] | None = None,
+    schema_context: "SchemaContext | None" = None,
 ) -> LLMResult:
     spec = STRUCTURED_PROMPTS[task]
     effort = _effort(spec, reasoning_effort)
+    inputs = {**inputs, **schema_inputs(schema_context.text if schema_context else None)}
 
     def structured(tier: ModelTier):
         # include_raw=True returns {"raw": AIMessage, "parsed": SQLAnswer | None,
@@ -141,7 +161,9 @@ async def run_structured(
         explanation=answer.explanation.strip() or None,
         assumptions=_clean(answer.assumptions),
         tables_used=_clean(answer.tables_used),
-        validation=validate_sql(sql, dialect),
+        # With a schema we also check every table/column the SQL uses against it.
+        validation=validate_sql(sql, dialect, schema_context.catalog if schema_context else None),
+        **_schema_fields(schema_context),
     )
 
 
@@ -152,6 +174,7 @@ async def generate_sql(
     dialect: str,
     reasoning_effort: ReasoningEffort | None = None,
     metadata: dict[str, Any] | None = None,
+    schema_context: "SchemaContext | None" = None,
 ) -> LLMResult:
     return await run_structured(
         provider,
@@ -160,6 +183,7 @@ async def generate_sql(
         dialect=dialect,
         reasoning_effort=reasoning_effort,
         metadata=metadata,
+        schema_context=schema_context,
     )
 
 
@@ -170,6 +194,7 @@ async def stream_explanation(
     dialect: str,
     reasoning_effort: ReasoningEffort | None = None,
     metadata: dict[str, Any] | None = None,
+    schema_context: "SchemaContext | None" = None,
 ) -> AsyncIterator[str | LLMResult]:
     """Yield the explanation text piece by piece, then one final LLMResult."""
     spec = EXPLAIN_SQL
@@ -185,7 +210,12 @@ async def stream_explanation(
     parts: list[str] = []
     try:
         async for chunk in chain.astream(
-            {"sql": sql, "dialect": dialect}, config=_run_config(spec, effort, metadata)
+            {
+                "sql": sql,
+                "dialect": dialect,
+                **schema_inputs(schema_context.text if schema_context else None, prose=True),
+            },
+            config=_run_config(spec, effort, metadata),
         ):
             # Adding chunks merges them: text concatenates, and the token usage that
             # arrives on the last chunk ends up on `final`.
@@ -215,6 +245,7 @@ async def stream_explanation(
         fallback_used=model != expected,
         usage=usage,
         cost_usd=estimate_cost_usd(model, usage),
+        **_schema_fields(schema_context),
     )
 
 
@@ -237,10 +268,16 @@ async def assist_sql(
     dialect: str,
     reasoning_effort: ReasoningEffort | None = None,
     metadata: dict[str, Any] | None = None,
+    schema_context: "SchemaContext | None" = None,
 ) -> LLMResult:
     if mode == "explain":
         return await explain_sql(
-            provider, sql=sql, dialect=dialect, reasoning_effort=reasoning_effort, metadata=metadata
+            provider,
+            sql=sql,
+            dialect=dialect,
+            reasoning_effort=reasoning_effort,
+            metadata=metadata,
+            schema_context=schema_context,
         )
     return await run_structured(
         provider,
@@ -249,4 +286,5 @@ async def assist_sql(
         dialect=dialect,
         reasoning_effort=reasoning_effort,
         metadata=metadata,
+        schema_context=schema_context,
     )

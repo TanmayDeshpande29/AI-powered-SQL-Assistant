@@ -493,8 +493,8 @@ table.hand.compact td {
   display: flex;
   align-items: baseline;
   gap: 2mm;
-  font-size: 18px;
-  margin: 0.7mm 0;
+  font-size: 16px;
+  margin: 0.3mm 0;
 }
 .toc-row .t {
   min-width: 0; /* long titles wrap inside their column instead of overflowing */
@@ -507,16 +507,16 @@ table.hand.compact td {
 .toc-row .pg {
   font-family: var(--title);
   font-weight: 700;
-  font-size: 21px;
+  font-size: 18px;
   min-width: 8mm;
   text-align: right;
 }
 .toc-row.chapter .t {
   font-family: var(--title);
   font-weight: 700;
-  font-size: 23px;
+  font-size: 20px;
 }
 .toc-row.sub {
-  padding-left: 7mm;
-  font-size: 16px;
+  padding-left: 6mm;
+  font-size: 14.5px;
 }

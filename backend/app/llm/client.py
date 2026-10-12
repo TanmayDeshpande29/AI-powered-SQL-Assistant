@@ -54,6 +54,30 @@ def get_chat_model(
     )
 
 
+@lru_cache
+def get_vision_model() -> BaseChatModel:
+    """The image-capable model (Phase 2: reading schema screenshots).
+
+    Its reasoning switch is model-specific ("none" for Qwen), so it is configured
+    separately from the gpt-oss tiers. Transcribing is perception, not reasoning.
+    """
+    extra = {}
+    if settings.llm_vision_reasoning_effort:
+        extra = {
+            "reasoning_effort": settings.llm_vision_reasoning_effort,
+            "reasoning_format": "parsed",
+        }
+    return ChatGroq(
+        model=settings.llm_model_vision,
+        api_key=settings.groq_api_key,
+        temperature=0,  # transcription: we want the most likely reading, not creativity
+        timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_max_output_tokens,
+        max_retries=0,
+        **extra,
+    )
+
+
 def with_resilience(runnable: Runnable, fallback: Runnable | None = None) -> Runnable:
     """Retry transient failures with exponential backoff + jitter; on a rate limit,
     switch to `fallback` instead of waiting."""
@@ -94,6 +118,12 @@ class LLMProvider:
 
     def model_name(self, tier: ModelTier) -> str:
         return model_for(tier)
+
+    def vision_model(self) -> BaseChatModel:
+        return get_vision_model()
+
+    def vision_model_name(self) -> str:
+        return settings.llm_model_vision
 
 
 def get_llm_provider() -> LLMProvider:

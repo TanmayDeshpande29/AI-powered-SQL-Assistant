@@ -110,6 +110,8 @@ python-dotenv==1.2.4
     # via
     #   pydantic-settings
     #   uvicorn
+python-multipart==0.0.32
+    # via sqlassist-backend
 pyyaml==6.0.3
     # via
     #   langchain-core

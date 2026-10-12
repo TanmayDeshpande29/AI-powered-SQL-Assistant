@@ -26,6 +26,14 @@ Every phase follows the same loop:
 | 2026-10-07 | **Retry transient errors, fall back on rate limits**; Groq SDK retries off | the SDK would sleep up to 60 s per 429 before any fallback | SDK default retries |
 | 2026-10-07 | **sqlglot validation pulled into Phase 1** | cheap, visible quality gate on every answer; groundwork for the Validator agent | wait until Phase 6 |
 | 2026-10-07 | **Per-prompt reasoning effort** (explain = low) | measured: medium effort spent 71% of output on hidden reasoning; low was 2.5× faster to first word and 4.4× cheaper | one global effort |
+| 2026-10-08 | **Schemas belong to a user; workspaces deferred to Phase 8** | one owner column keeps queries and IDOR checks simple now; a `workspace_id` can replace `user_id` later | workspaces now (teams/roles before anyone needs them) |
+| 2026-10-08 | **In-process jobs**: FastAPI `BackgroundTasks` + a Postgres row as the job record, 202 + polling | no Redis needed yet; the client contract (202 + poll) stays the same when a real queue replaces the executor | Redis + arq/Celery now (Docker daemon not available yet) |
+| 2026-10-08 | **Idempotent uploads** via sha256 + `UNIQUE(schema_id, content_hash)` | double clicks and retries never reprocess or pay twice; enforced by the database | client-side de-duplication only |
+| 2026-10-08 | **Screenshots: two stages** (vision LLM → DDL text → our parser) | one deterministic parser for every input; the transcription is visible to the user; cost paid once per upload | vision model straight to JSON tables |
+| 2026-10-08 | **Images stored in Postgres (`BYTEA`)** for now | ≤ 4 MB each, few uploads; no extra service | S3/R2 object storage (Phase 8/9) |
+| 2026-10-08 | **Prompt stuffing with a character budget** as the baseline | measurable starting point before RAG; truncation is reported to the user | retrieval right away (Phases 3–4 need this baseline to beat) |
+| 2026-10-08 | **Schema as data in the human message** (`<schema>` tags), rules in the system message; prompts v3 | user-supplied comments could contain instructions; roles keep data and instructions apart | schema in the system prompt |
+| 2026-10-08 | **Schema-reference validation separate from syntax** (`schema_issues`, `valid` unchanged) | "valid SQL that names a missing column" is two facts; the UI shows both | mark such SQL invalid |
 
 ## Phases
 
@@ -51,17 +59,21 @@ Every phase follows the same loop:
 - 51 tests; verified live end to end (API, PostgreSQL, Groq, browser UI).
 - Details: [phases/phase-1-llm-layer.md](phases/phase-1-llm-layer.md)
 
-### Phase 2: Schema ingestion
-- Inputs: pasted SQL, `.sql` upload, screenshot (vision model → DDL), free text.
-- `sqlglot` parsing for many dialects → normalized tables: `workspaces`, `schema_sources`, `schema_tables`, `schema_columns`, `fk_edges`.
-- Background job (Redis queue + worker) with progress reporting.
-- Table-picker UI (user selects tables to focus on).
-- **Learn:** parsing/ASTs, multimodal LLMs, job queues, idempotent ingestion.
+### Phase 2: Schema ingestion ✅ (2026-10-08)
+- Inputs: pasted SQL, `.sql`/`.ddl`/`.txt` upload, screenshot (vision model `qwen/qwen3.8-27b` → DDL → parser).
+- sqlglot DDL extraction: pg_dump, mysqldump, SSMS scripts, `ALTER`, `COMMENT ON`; tables, columns and joins inferred from plain queries; one broken statement = one warning.
+- Normalized storage (migration 3): `db_schemas`, `schema_sources`, `schema_tables`, `schema_columns`, `schema_relationships`; explicit merge rules across uploads.
+- Background processing: 202 + polling, Postgres job rows, idempotent uploads (sha256), per-schema lock, parsing in a thread, startup recovery.
+- Grounded prompts v3 (schema as data, character budget, truncation reported); schema-aware validation (`schema_issues`).
+- UI: real Database Setup workspace; Query Builder and SQL Assistants pick a schema and tables.
+- 74 tests; verified live (paste, file, screenshot, grounded vs ungrounded generation).
+- Details: [phases/phase-2-schema-ingestion.md](phases/phase-2-schema-ingestion.md)
 
 ### Phase 3: Embeddings + Qdrant
 - Table cards (one chunk per table) with LLM-written descriptions and synonyms.
 - Hugging Face embedding model (start with `BAAI/bge-small-en-v1.5`, 384-d); sparse BM25 vectors.
-- Qdrant collection with tenant-indexed `workspace_id` payload.
+- Qdrant collection with tenant-indexed `user_id` / `schema_id` payload (workspace later).
+- Re-embed a schema's tables when an upload changes them (hook into the ingestion job).
 - **Learn:** embeddings, similarity metrics, HNSW, payload filtering, multitenancy.
 
 ### Phase 4: Retrieval
@@ -94,6 +106,7 @@ Every phase follows the same loop:
 ### Phase 8: SaaS & scale
 - Workspaces + roles, plans/quotas, per-user rate limiting (token bucket in Redis).
 - Exact + semantic caching; refresh token in httpOnly cookie; token revocation (`jti` denylist, rotation).
+- Redis-backed job queue for ingestion (replaces `BackgroundTasks`); object storage for uploaded images.
 - Structured logging, metrics, traces; UI/UX overhaul (design system, toasts, empty states, accessibility).
 - **Learn:** multi-tenancy, caching, rate limiting, observability.
 

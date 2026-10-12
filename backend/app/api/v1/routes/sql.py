@@ -11,7 +11,9 @@ from app.db.session import release_connection
 from app.models import User
 from app.schemas.sql import AssistSQLRequest, ExplainSQLRequest, GenerateSQLRequest, LLMResponse
 from app.services import history as history_service
+from app.services import schemas as schema_service
 from app.services import sql as sql_service
+from app.services.schemas import SchemaContext
 from app.services.sql import LLMResult
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,14 @@ router = APIRouter(prefix="/sql", tags=["sql"])
 
 def _trace_metadata(user: User) -> dict[str, str]:
     return {"user_id": str(user.id)}  # lets you filter LangSmith traces per user
+
+
+async def _schema_context(db: AsyncSession, user: User, data) -> SchemaContext | None:
+    """Load the selected schema (404 if it isn't the user's) while we still hold the
+    DB connection, i.e. before release_connection()."""
+    if data.schema_id is None:
+        return None
+    return await schema_service.build_context(db, user.id, data.schema_id, data.tables)
 
 
 async def _respond(
@@ -52,11 +62,15 @@ async def _respond(
         cost_usd=float(result.cost_usd) if result.cost_usd is not None else None,
         fallback_used=result.fallback_used,
         history_id=entry.id if entry else None,
+        schema_id=result.schema_id,
+        schema_tables=result.schema_tables,
+        schema_truncated=result.schema_truncated,
     )
 
 
 @router.post("/generate", response_model=LLMResponse)
 async def generate(data: GenerateSQLRequest, user: CurrentUser, db: DbSession, llm: LLM):
+    context = await _schema_context(db, user, data)
     await release_connection(db)  # don't hold a DB connection during the LLM call
     result = await sql_service.generate_sql(
         llm,
@@ -64,6 +78,7 @@ async def generate(data: GenerateSQLRequest, user: CurrentUser, db: DbSession, l
         dialect=data.dialect,
         reasoning_effort=data.reasoning_effort,
         metadata=_trace_metadata(user),
+        schema_context=context,
     )
     return await _respond(
         db,
@@ -78,6 +93,7 @@ async def generate(data: GenerateSQLRequest, user: CurrentUser, db: DbSession, l
 
 @router.post("/assist", response_model=LLMResponse)
 async def assist(data: AssistSQLRequest, user: CurrentUser, db: DbSession, llm: LLM):
+    context = await _schema_context(db, user, data)
     await release_connection(db)
     result = await sql_service.assist_sql(
         llm,
@@ -86,6 +102,7 @@ async def assist(data: AssistSQLRequest, user: CurrentUser, db: DbSession, llm: 
         dialect=data.dialect,
         reasoning_effort=data.reasoning_effort,
         metadata=_trace_metadata(user),
+        schema_context=context,
     )
     return await _respond(
         db,
@@ -109,17 +126,20 @@ async def explain_stream(
             `error` {"code", "message", "details"}.
     Auth and body validation run before streaming starts, so they still return normal
     401/422 JSON errors. Once the stream has begun the status code (200) is already
-    sent, so later failures can only be reported as an `error` event.
+    sent, so later failures can only be reported as an `error` event (that includes
+    an unknown schema_id, which is looked up inside the stream).
     """
-    await release_connection(db)
     result: LLMResult | None = None
     try:
+        context = await _schema_context(db, user, data)
+        await release_connection(db)
         async for item in sql_service.stream_explanation(
             llm,
             sql=data.sql,
             dialect=data.dialect,
             reasoning_effort=data.reasoning_effort,
             metadata=_trace_metadata(user),
+            schema_context=context,
         ):
             if isinstance(item, LLMResult):
                 result = item

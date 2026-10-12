@@ -31,8 +31,10 @@ async def test_generate_returns_structured_validated_answer(client):
         "dialect": "postgres",
         "statement_types": ["SELECT"],
         "errors": [],
+        "schema_checked": False,  # no schema selected: nothing to check names against
+        "schema_issues": [],
     }
-    assert body["prompt_version"] == "generate_sql@v2"
+    assert body["prompt_version"] == "generate_sql@v3"
     assert body["usage"]["reasoning_tokens"] == 30
     assert body["model"] == "fake-primary"
     assert body["fallback_used"] is False
@@ -46,7 +48,7 @@ async def test_history_records_usage_and_details(client):
     )
     item = (await client.get("/api/v1/history", headers=headers)).json()["items"][0]
     assert item["tool"] == "generate"
-    assert item["prompt_version"] == "generate_sql@v2"
+    assert item["prompt_version"] == "generate_sql@v3"
     assert (item["input_tokens"], item["output_tokens"], item["reasoning_tokens"]) == (120, 80, 30)
     assert item["details"]["tables_used"] == ["users"]
     assert item["details"]["validation"]["valid"] is True
@@ -129,7 +131,7 @@ async def test_assist_debug_uses_structured_output(client):
     )
     body = res.json()
     assert res.status_code == 200
-    assert body["prompt_version"] == "debug_sql@v2"
+    assert body["prompt_version"] == "debug_sql@v3"
     assert body["validation"]["dialect"] == "mysql"
 
 

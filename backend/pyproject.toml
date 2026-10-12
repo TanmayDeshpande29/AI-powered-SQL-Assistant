@@ -22,6 +22,7 @@ dependencies = [
     "langchain-core>=0.3",
     "langchain-groq>=0.2",
     "sqlglot>=30.21.0",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]

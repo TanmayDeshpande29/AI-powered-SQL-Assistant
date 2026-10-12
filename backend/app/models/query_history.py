@@ -44,5 +44,9 @@ class QueryHistory(UUIDPrimaryKeyMixin, Base):
     details: Mapped[dict[str, Any] | None] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql")
     )
+    # --- Phase 2: which uploaded schema grounded the answer (kept if the schema is deleted) ---
+    schema_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("db_schemas.id", ondelete="SET NULL")
+    )
 
     user: Mapped["User"] = relationship(back_populates="queries")

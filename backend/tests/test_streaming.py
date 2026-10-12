@@ -38,7 +38,7 @@ async def test_stream_sends_tokens_then_done(client):
 
     done = events[-1][1]
     assert done["output"] == FAKE_EXPLANATION
-    assert done["prompt_version"] == "explain_sql@v2"
+    assert done["prompt_version"] == "explain_sql@v3"
     assert done["usage"]["total_tokens"] == 200
     assert done["history_id"]
 

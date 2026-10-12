@@ -23,11 +23,12 @@ class ModelPrice(BaseModel):
     cached_input: float | None = None
 
 
-# Groq list prices, checked 2026-10-07 on console.groq.com/docs/models.
+# Groq list prices, checked 2026-10-07/08 on console.groq.com (docs + /models API).
 # Override with LLM_PRICES='{"model-id": {"input": 0.1, "output": 0.4}}' in .env.
 DEFAULT_LLM_PRICES = {
     "openai/gpt-oss-120b": ModelPrice(input=0.15, output=0.60, cached_input=0.075),
     "openai/gpt-oss-20b": ModelPrice(input=0.075, output=0.30, cached_input=0.037),
+    "qwen/qwen3.8-27b": ModelPrice(input=0.80, output=4.00, cached_input=0.40),
 }
 
 
@@ -76,6 +77,18 @@ class Settings(BaseSettings):
     # (Groq strict mode, gpt-oss only); "function_calling" = schema sent as a tool definition.
     llm_structured_output_method: Literal["json_schema", "function_calling"] = "json_schema"
     llm_prices: dict[str, ModelPrice] = Field(default_factory=lambda: dict(DEFAULT_LLM_PRICES))
+    # Vision (screenshots of schemas). The only image-capable model on Groq's list today.
+    llm_model_vision: str = "qwen/qwen3.8-27b"
+    # Qwen's own reasoning switch ("none" | "default"): transcription needs no thinking
+    # (measured: 0.9 s with "none" vs 2.3 s with reasoning). Empty = provider default.
+    llm_vision_reasoning_effort: str | None = "none"
+
+    # --- Schema ingestion (Phase 2) ---
+    max_sql_upload_bytes: int = 5_000_000  # .sql files: schema-only dumps are far smaller
+    max_image_upload_bytes: int = 4_000_000  # Groq's limit for base64-encoded images
+    # Budget for the schema text put into a prompt (~4 characters per token).
+    # Bigger schemas get truncated: the limit that RAG (Phases 3-4) removes.
+    schema_context_max_chars: int = 12_000
 
     # --- Tracing (LangSmith) ---
     # Off unless LANGSMITH_TRACING=true and an API key are set. When on, prompts and answers

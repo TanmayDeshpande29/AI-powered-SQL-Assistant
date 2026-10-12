@@ -10,11 +10,11 @@ from typing import Annotated
 import jwt
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import AuthenticationError
 from app.core.security import decode_token
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.llm.client import LLMProvider, get_llm_provider
 from app.models import User
 
@@ -23,6 +23,7 @@ from app.models import User
 bearer_scheme = HTTPBearer(auto_error=False)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
 LLM = Annotated[LLMProvider, Depends(get_llm_provider)]
 
 

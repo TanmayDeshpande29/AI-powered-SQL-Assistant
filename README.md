@@ -19,8 +19,8 @@
 |---|---|---|
 | 0 | Foundation: Postgres, auth, LangChain LLM layer, bug fixes | ✅ done |
 | 1 | LLM layer: structured output, SQL validation, SSE streaming, tokens & cost, reasoning effort, retries & fallbacks, prompt versions, LangSmith tracing | ✅ done |
-| 2 | Schema ingestion: SQL text / `.sql` files / screenshots → normalized schema | ⏭️ next |
-| 3 | Embeddings + Qdrant: table cards, dense + sparse vectors, multi-tenancy | planned |
+| 2 | Schema ingestion: SQL text / `.sql` files / screenshots (vision LLM) → normalized schema, background jobs, grounded prompts, schema-aware validation, table picker | ✅ done |
+| 3 | Embeddings + Qdrant: table cards, dense + sparse vectors, multi-tenancy | ⏭️ next |
 | 4 | Retrieval: BM25, dense, hybrid (RRF), FK-graph expansion, reranking | planned |
 | 5 | RAG evaluation: golden set, retrieval metrics, execution accuracy, RAGAS, CI gate | planned |
 | 6 | Agents (LangGraph): router, retriever, generator, validator, safety, optimizer, explainer, memory, HITL | planned |
@@ -29,7 +29,7 @@
 | 9 | Ship: Dockerfiles, CI/CD, deployment | planned |
 
 The full plan, with decisions and learning goals per phase, is in [docs/ROADMAP.md](docs/ROADMAP.md).
-File-by-file explanations of each phase: [Phase 0: foundation](docs/phases/phase-0-foundation.md) · [Phase 1: LLM layer](docs/phases/phase-1-llm-layer.md).
+File-by-file explanations of each phase: [Phase 0: foundation](docs/phases/phase-0-foundation.md) · [Phase 1: LLM layer](docs/phases/phase-1-llm-layer.md) · [Phase 2: schema ingestion](docs/phases/phase-2-schema-ingestion.md).
 
 ---
 
@@ -44,20 +44,21 @@ flowchart TB
     subgraph API["FastAPI · /api/v1"]
         AUTH["auth + JWT"]:::built
         SQLR["sql + history"]:::built
-        ING["schema ingest API"]:::planned
+        ING["schemas API<br/>uploads → 202"]:::built
         QRY["query API (agent runs)"]:::planned
     end
 
     subgraph WORK["Background & agents"]
-        WRK["ingestion worker<br/>parse → chunk → embed"]:::planned
+        JOB["ingestion job (in-process)<br/>parse → normalize → merge"]:::built
+        WRK["embedding worker<br/>chunk → embed"]:::planned
         AG["LangGraph agent team<br/>router · retriever · generator<br/>validator · safety · explainer"]:::planned
         MCP["MCP server (FastMCP)"]:::planned
     end
 
-    PG[("PostgreSQL<br/>users · history · schema metadata")]:::built
+    PG[("PostgreSQL<br/>users · history · schemas · tables · jobs")]:::built
     QD[("Qdrant<br/>dense + sparse vectors")]:::planned
     RD[("Redis<br/>queue · cache · rate limits")]:::planned
-    GQ{{"Groq LLMs<br/>gpt-oss-120b / 20b"}}:::built
+    GQ{{"Groq LLMs<br/>gpt-oss-120b / 20b · qwen vision"}}:::built
     HF{{"Hugging Face<br/>embeddings · reranker"}}:::planned
     HOST["Claude Desktop / Cursor"]:::planned
 
@@ -65,9 +66,11 @@ flowchart TB
     AUTH --> PG
     SQLR --> PG
     SQLR --> GQ
-    ING --> WRK
+    ING --> JOB
+    JOB --> PG
+    JOB -->|screenshots| GQ
+    JOB -.-> WRK
     QRY --> AG
-    WRK --> PG
     WRK --> HF
     WRK --> QD
     AG --> QD
@@ -87,7 +90,7 @@ flowchart LR
     R["api/v1/routes<br/>HTTP in/out, status codes, SSE"] --> S["services<br/>business rules"]
     S --> M["models + db<br/>ORM tables, sessions"]
     S --> L["llm<br/>model factory · retry/fallback<br/>prompts · output schemas · usage"]
-    S --> T["sql_tools<br/>sqlglot validation"]
+    S --> T["sql_tools<br/>sqlglot: validation · DDL extraction<br/>schema catalog"]
     R -.-> C["core<br/>config · security · exceptions<br/>logging · tracing"]
     S -.-> C
     M -.-> C
@@ -108,22 +111,61 @@ sequenceDiagram
     participant LLM as Groq · gpt-oss-120b
     participant DB as PostgreSQL
 
-    U->>FE: question + dialect + "thinking" level, clicks Generate
-    FE->>API: POST {question, dialect, reasoning_effort, save_history} + Bearer token
+    U->>FE: question + dialect + schema + ticked tables, clicks Generate
+    FE->>API: POST {question, dialect, schema_id, tables, reasoning_effort} + Bearer token
     API->>API: Pydantic validates body (422 if invalid)
     API->>DEP: verify JWT signature, expiry, type=access
     DEP->>DB: SELECT user by id
+    API->>DB: load own schema (404 if not yours) → table cards within the budget + catalog
     API->>DB: COMMIT (release the connection before the slow LLM call)
-    API->>SVC: generate_sql(provider, question, dialect, effort)
-    SVC->>LLM: prompt | ChatGroq.with_structured_output(SQLAnswer, json_schema, strict)
+    API->>SVC: generate_sql(provider, question, dialect, effort, schema_context)
+    SVC->>LLM: generate_sql@v3: rules (system) + schema cards + request, tagged (human)
     Note over SVC,LLM: network error / 5xx → retry with backoff<br/>429 rate limit → fall back to gpt-oss-20b
     LLM-->>SVC: JSON matching SQLAnswer + token usage
-    SVC->>SVC: sqlglot validates the SQL · cost = tokens × list price
-    SVC-->>API: LLMResult(sql, explanation, assumptions, tables_used, validation, usage, cost)
-    API->>DB: INSERT query_history (tokens, cost, prompt version, details)
+    SVC->>SVC: sqlglot: syntax + unknown tables/columns vs catalog · cost = tokens × price
+    SVC-->>API: LLMResult(sql, explanation, assumptions, validation, schema_tables, usage, cost)
+    API->>DB: INSERT query_history (schema_id, tokens, cost, prompt version, details)
     API-->>FE: 200 LLMResponse
-    FE-->>U: SQL + validity badge + assumptions + model · time · tokens · cost
+    FE-->>U: SQL + syntax badge + schema check + "grounded in N tables" + metrics
 ```
+
+### Uploading a schema (Phase 2): 202 + background job + polling
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant FE as Database Setup page
+    participant API as FastAPI /schemas/{id}/sources
+    participant DB as PostgreSQL
+    participant JOB as process_source (background)
+    participant V as Groq · qwen vision
+
+    U->>FE: paste SQL / drop .sql file / Ctrl+V screenshot
+    FE->>API: POST text (JSON) or file (multipart)
+    API->>API: owner check (404) · magic bytes (415) · size (413) · decode
+    API->>DB: sha256 seen in this schema?
+    alt same content already uploaded
+        API-->>FE: 200 existing source (nothing reprocessed)
+    else new content
+        API->>DB: INSERT schema_sources (status = pending)
+        API-->>FE: 202 Accepted + source
+        API->>JOB: BackgroundTasks runs after the response
+        JOB->>JOB: per-schema lock → re-check status → processing
+        opt screenshot
+            JOB->>V: image (base64 data URL) → CREATE TABLE text
+            JOB->>DB: save transcription
+        end
+        JOB->>JOB: sqlglot extraction in a thread (to_thread)
+        JOB->>DB: merge tables/columns/FKs → ready + stats (or failed + message)
+    end
+    loop every 1.5 s while pending/processing
+        FE->>API: GET /schemas/{id} + /sources
+    end
+    FE-->>U: tables, keys, FKs, warnings, what the vision model read
+```
+
+A failed upload can simply be sent again (the same content is retried). Jobs interrupted by a server restart are marked failed at startup, so the page never polls forever.
 
 ### Streaming an explanation (Server-Sent Events)
 
@@ -180,6 +222,12 @@ Concurrent 401s share **one** refresh request (single-flight), see `frontend/src
 ```mermaid
 erDiagram
     USERS ||--o{ QUERY_HISTORY : "has (ON DELETE CASCADE)"
+    USERS ||--o{ DB_SCHEMAS : "owns (CASCADE)"
+    DB_SCHEMAS ||--o{ SCHEMA_SOURCES : "uploads = job records"
+    DB_SCHEMAS ||--o{ SCHEMA_TABLES : "contains"
+    SCHEMA_TABLES ||--o{ SCHEMA_COLUMNS : "has"
+    SCHEMA_TABLES ||--o{ SCHEMA_RELATIONSHIPS : "foreign keys out"
+    DB_SCHEMAS |o--o{ QUERY_HISTORY : "grounded (SET NULL)"
     USERS {
         uuid id PK
         varchar email UK "normalized lowercase"
@@ -205,9 +253,61 @@ erDiagram
         int output_tokens "includes reasoning"
         int reasoning_tokens
         numeric cost_usd "12,8 exact decimal"
-        jsonb details "explanation, assumptions, tables, validation"
+        jsonb details "explanation, assumptions, tables, validation, schema tables"
+        uuid schema_id FK "nullable"
+    }
+    DB_SCHEMAS {
+        uuid id PK
+        uuid user_id FK
+        varchar name "unique per user"
+        varchar dialect
+        text description
+    }
+    SCHEMA_SOURCES {
+        uuid id PK
+        uuid schema_id FK
+        varchar kind "sql_text | sql_file | image"
+        varchar content_hash "sha256, unique per schema"
+        text text "SQL or vision transcription"
+        bytea raw "image bytes"
+        varchar status "pending | processing | ready | failed"
+        text error
+        jsonb warnings
+        jsonb stats
+    }
+    SCHEMA_TABLES {
+        uuid id PK
+        uuid schema_id FK
+        uuid source_id FK "last upload that described it"
+        varchar key "normalized, unique per schema"
+        varchar db_schema
+        varchar name
+        text comment
+        boolean inferred "seen only in queries"
+    }
+    SCHEMA_COLUMNS {
+        uuid id PK
+        uuid table_id FK
+        varchar name "unique per table"
+        varchar data_type
+        boolean nullable
+        boolean is_primary_key
+        boolean is_unique
+        text default
+        text comment
+        int position
+    }
+    SCHEMA_RELATIONSHIPS {
+        uuid id PK
+        uuid from_table_id FK
+        jsonb from_columns
+        varchar to_table_key "resolved when read"
+        jsonb to_columns
+        boolean inferred "guessed from a join"
     }
 ```
+
+A relationship points at its target by **key**, not by a database foreign key: uploads arrive in any order, so `order_items → products` can be stored before `products` exists.
 
 ### LLM resilience policy
 
@@ -224,16 +324,16 @@ flowchart LR
 
 The Groq SDK's own retries are switched off (`max_retries=0`). By default it would sleep for the server's `Retry-After`, up to 60 s on every attempt, before our fallback could react.
 
-### Coming next: the RAG pipeline (Phases 2–4)
+### The RAG pipeline (ingestion built in Phase 2; retrieval in Phases 3–4)
 
 ```mermaid
 flowchart LR
-    subgraph Ingestion["Ingestion (offline, background worker)"]
-        IN["SQL text / .sql file / screenshot"] --> PA["parse<br/>sqlglot + vision LLM"]
-        PA --> NO["normalize<br/>tables, columns, PK/FK"]
-        NO --> CH["chunk<br/>1 table = 1 card"]
-        CH --> EM["embed<br/>HF model"]
-        EM --> QD[("Qdrant")]
+    subgraph Ingestion["Ingestion (offline, background job)"]
+        IN["SQL text / .sql file / screenshot"]:::built --> PA["parse<br/>sqlglot + vision LLM"]:::built
+        PA --> NO["normalize + merge<br/>tables, columns, PK/FK"]:::built
+        NO --> CH["chunk<br/>1 table = 1 card"]:::built
+        CH --> EM["embed<br/>HF model"]:::planned
+        EM --> QD[("Qdrant")]:::planned
     end
     subgraph Query["Query (online)"]
         Q["question + chosen tables"] --> RW["rewrite"]
@@ -248,7 +348,12 @@ flowchart LR
         V -->|ok| OUT["SQL ✓"]
     end
     QD -.-> HY
+
+    classDef built fill:#d4f4dd,stroke:#2e7d32,color:#1b2740
+    classDef planned fill:#fff8e1,stroke:#c96a00,stroke-dasharray:5 5,color:#1b2740
 ```
+
+Today (Phase 2) the "retrieval" step is the user's table selection, or every table up to a character budget (`SCHEMA_CONTEXT_MAX_CHARS`); the answer reports when tables were left out. Phases 3–4 replace that with relevance-ranked retrieval, measured against this baseline in Phase 5.
 
 ### Coming next: the agent graph (Phase 6)
 
@@ -325,7 +430,7 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --reload-include .env --port 8000
 ```
 
-`alembic upgrade head` creates the tables. In pgAdmin you should then see `users`, `query_history` and `alembic_version` under **sql_assistant → Schemas → public → Tables** (refresh the tree first).
+`alembic upgrade head` creates the tables. In pgAdmin you should then see `users`, `query_history`, `db_schemas`, `schema_sources`, `schema_tables`, `schema_columns`, `schema_relationships` and `alembic_version` under **sql_assistant → Schemas → public → Tables** (refresh the tree first).
 
 On startup the API logs `Database ready: postgresql+asyncpg://…` or explains what's wrong. You can also check <http://localhost:8000/api/v1/health/ready> (`"database": "up"`). Settings are read once at startup; `--reload-include .env` makes the dev server restart when you edit `.env`, not only when `.py` files change.
 
@@ -368,7 +473,7 @@ uv run pytest
 uv run ruff check app tests
 ```
 
-Tests use in-memory SQLite and a fake LLM provider (which can simulate structured answers, streaming, rate limits and outages), so they need no database, network or API key.
+Tests use in-memory SQLite and a fake LLM provider (which can simulate structured answers, streaming, a vision model, rate limits and outages), so they need no database, network or API key. Background ingestion jobs run against the same in-memory database.
 
 ---
 
@@ -387,10 +492,17 @@ Tests use in-memory SQLite and a fake LLM provider (which can simulate structure
 | POST | `/api/v1/sql/explain/stream` | ✓ | explanation streamed as Server-Sent Events: `token`… then `done` or `error` |
 | GET | `/api/v1/history?limit&offset` | ✓ | own history, newest first, with tokens, cost and details |
 | DELETE | `/api/v1/history/{id}` | ✓ | delete own entry (`404` if not yours) |
+| GET / POST | `/api/v1/schemas` | ✓ | list own schemas (status, counts) · create one (`409` on a duplicate name) |
+| GET / PATCH / DELETE | `/api/v1/schemas/{id}` | ✓ | tables with columns and FKs · rename / change dialect · delete everything |
+| DELETE | `/api/v1/schemas/{id}/tables/{table_id}` | ✓ | remove one table |
+| POST | `/api/v1/schemas/{id}/sources/text` | ✓ | `{"sql": "…"}` → `202` + source (`200` if this exact content was already uploaded) |
+| POST | `/api/v1/schemas/{id}/sources/file` | ✓ | multipart `file`: `.sql`/`.ddl`/`.txt` or PNG/JPEG/WebP → `202` (`413` too large, `415` other types) |
+| GET | `/api/v1/schemas/{id}/sources` · `/sources/{source_id}` | ✓ | uploads, newest first · poll one until `ready` or `failed` |
 
-All three SQL endpoints accept an optional `reasoning_effort` (`low` · `medium` · `high`). Every answer (`LLMResponse`) contains:
+All three SQL endpoints accept an optional `reasoning_effort` (`low` · `medium` · `high`), and an optional `schema_id` plus `tables` (names to focus on; omitted = the whole schema up to the prompt budget). Every answer (`LLMResponse`) contains:
 - `output`, `explanation`, `assumptions`, `tables_used`;
-- `validation` (`valid`, `dialect`, `statement_types`, `errors`);
+- `validation` (`valid`, `dialect`, `statement_types`, `errors`, plus `schema_checked` and `schema_issues` such as `Unknown column: o.order_date`);
+- `schema_id`, `schema_tables` (what the model was shown), `schema_truncated`;
 - `model`, `prompt_version`, `reasoning_effort`, `latency_ms`;
 - `usage` (input, output, reasoning and cached tokens), `cost_usd`, `fallback_used`, `history_id`.
 
@@ -411,21 +523,25 @@ backend/
     core/                 config (pydantic-settings), security (bcrypt, JWT), exceptions, logging,
                           tracing (LangSmith)
     db/                   declarative Base + mixins, async engine/session, release_connection
-    models/               User, QueryHistory (SQLAlchemy 2 typed ORM)
+    models/               User, QueryHistory, DbSchema, SchemaSource, SchemaTable, SchemaColumn,
+                          SchemaRelationship (SQLAlchemy 2 typed ORM)
     schemas/              Pydantic request/response models (API contracts)
-    services/             auth, sql (structured + streamed LLM calls), history
-    llm/                  client (ChatGroq tiers, retry/fallback), prompts (versioned),
-                          output_schemas (what the LLM must return), usage (tokens, cost), parsers
-    sql_tools/            sqlglot-based SQL validation (Phase 2 adds DDL extraction)
-    api/deps.py           shared dependencies: DbSession, CurrentUser, LLM (provider)
-    api/v1/routes/        auth, users, sql (incl. SSE stream), history, health
+    services/             auth, sql (structured + streamed LLM calls), history,
+                          schemas (CRUD, uploads, merge rules, prompt context), ingestion (background job)
+    llm/                  client (ChatGroq tiers, retry/fallback, vision model), prompts (versioned,
+                          schema slots), vision (screenshot → DDL), output_schemas, usage (tokens, cost)
+    sql_tools/            sqlglot: validation (syntax + unknown tables/columns), ddl (schema
+                          extraction), catalog (name normalization)
+    api/deps.py           shared dependencies: DbSession, SessionFactory, CurrentUser, LLM (provider)
+    api/v1/routes/        auth, users, sql (incl. SSE stream), history, schemas, health
   alembic/                migrations (env.py uses the app's DB settings)
   tests/                  pytest: SQLite in-memory + fake LLM provider (no network)
   pyproject.toml, uv.lock, requirements.txt (exported for pip users)
 frontend/
-  src/lib/api.js          the only module that talks to the backend (tokens, refresh, errors, SSE)
+  src/lib/api.js          the only module that talks to the backend (tokens, refresh, errors, SSE, uploads)
+  src/lib/                dialects (one list for every dropdown), format helpers
   src/components/         ProtectedRoute, ReasoningEffortSelect, LLMResultDetails
-  src/*.jsx               pages
+  src/*.jsx               pages (DatabaseSetup = schema workspace, queryBuilder = table picker + generate)
 docs/
   ROADMAP.md              phases, decisions, learning goals
   phases/                 per-phase deep dives (what changed, why, how it works)

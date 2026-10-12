@@ -24,6 +24,8 @@ async def record(
         "tables_used": result.tables_used,
         "validation": result.validation.model_dump() if result.validation else None,
         "fallback_used": result.fallback_used,
+        "schema_tables": result.schema_tables,
+        "schema_truncated": result.schema_truncated,
     }
     entry = QueryHistory(
         user_id=user_id,
@@ -40,6 +42,7 @@ async def record(
         reasoning_tokens=usage.reasoning_tokens if usage else None,
         cost_usd=result.cost_usd,
         details=details,
+        schema_id=result.schema_id,
     )
     db.add(entry)
     await db.commit()

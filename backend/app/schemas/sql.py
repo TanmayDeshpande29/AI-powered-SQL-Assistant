@@ -19,6 +19,10 @@ class _LLMRequest(BaseModel):
     # How long the model "thinks" before answering: low = fastest/cheapest,
     # high = most careful. None = the server default (LLM_REASONING_EFFORT).
     reasoning_effort: ReasoningEffort | None = None
+    # Phase 2: ground the answer in an uploaded schema. `tables` narrows it down to the
+    # tables the user selected (names, optionally "namespace.table"); None = all tables.
+    schema_id: uuid.UUID | None = None
+    tables: list[str] | None = Field(default=None, max_length=200)
 
 
 class GenerateSQLRequest(_LLMRequest):
@@ -48,6 +52,9 @@ class LLMResponse(BaseModel):
     cost_usd: float | None = None  # list-price estimate in USD
     fallback_used: bool = False
     history_id: uuid.UUID | None = None
+    schema_id: uuid.UUID | None = None
+    schema_tables: list[str] = []  # tables shown to the model
+    schema_truncated: bool = False  # True if the schema didn't fit the prompt budget
 
 
 class QueryHistoryRead(BaseModel):
@@ -68,6 +75,7 @@ class QueryHistoryRead(BaseModel):
     reasoning_tokens: int | None = None
     cost_usd: float | None = None
     details: dict[str, Any] | None = None
+    schema_id: uuid.UUID | None = None
 
 
 class QueryHistoryPage(BaseModel):

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
-from app.db.session import get_db  # noqa: E402
+from app.db.session import get_db, get_session_factory  # noqa: E402
 from app.llm.client import get_llm_provider  # noqa: E402
 from app.llm.output_schemas import SQLAnswer  # noqa: E402
 from app.main import app  # noqa: E402
@@ -41,6 +41,10 @@ FAKE_ANSWER = SQLAnswer(
     tables_used=["users"],
 )
 FAKE_EXPLANATION = "Counts rows per department and keeps the large ones."
+FAKE_TRANSCRIPTION = (
+    "```sql\nCREATE TABLE customers (id INT PRIMARY KEY, name VARCHAR(100));\n"
+    "CREATE TABLE orders (id INT PRIMARY KEY, customer_id INT REFERENCES customers(id));\n```"
+)
 FAKE_USAGE = {
     "input_tokens": 120,
     "output_tokens": 80,
@@ -61,6 +65,7 @@ class FakeChatModel(FakeListChatModel):
     answer: SQLAnswer | None = FAKE_ANSWER
     errors: list[Any] = []
     calls: int = 0
+    last_messages: list[Any] = []  # the prompt the model received last (for assertions)
 
     def _maybe_fail(self) -> None:
         self.calls += 1
@@ -73,14 +78,22 @@ class FakeChatModel(FakeListChatModel):
         )
 
     def with_structured_output(self, schema, **kwargs):
-        def respond(_messages):
+        def respond(prompt):
+            self.last_messages = prompt.to_messages()
             self._maybe_fail()
             parsing_error = None if self.answer else ValueError("not valid JSON")
             return {"raw": self._raw(), "parsed": self.answer, "parsing_error": parsing_error}
 
         return RunnableLambda(respond)
 
+    def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+        """Plain (non-streaming, unstructured) calls, e.g. the vision transcription."""
+        self.last_messages = messages
+        self._maybe_fail()
+        return super()._call(messages, stop, run_manager, **kwargs)
+
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs) -> AsyncIterator:
+        self.last_messages = messages
         self._maybe_fail()
         words = self.responses[0].split(" ")
         for i, word in enumerate(words):
@@ -103,6 +116,8 @@ class FakeLLMProvider:
             "fast": FakeChatModel(responses=[FAKE_EXPLANATION], model_name="fake-fast"),
         }
         self.efforts: list[str | None] = []
+        # Vision: "reads" any image as this DDL (tests change it as needed).
+        self.vision = FakeChatModel(responses=[FAKE_TRANSCRIPTION], model_name="fake-vision")
 
     def chat_model(self, tier="primary", reasoning_effort=None):
         self.efforts.append(reasoning_effort)
@@ -110,6 +125,12 @@ class FakeLLMProvider:
 
     def model_name(self, tier):
         return self.models[tier].model_name
+
+    def vision_model(self):
+        return self.vision
+
+    def vision_model_name(self):
+        return self.vision.model_name
 
 
 def rate_limit_error(retry_after: str = "7") -> groq.RateLimitError:
@@ -148,6 +169,8 @@ async def client(session_factory, fake_llm):
     # Dependency overrides: same routes, swapped infrastructure.
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_llm_provider] = lambda: fake_llm
+    # Background jobs open their own sessions: point them at the test database too.
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
